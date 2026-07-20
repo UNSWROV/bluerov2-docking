@@ -99,7 +99,7 @@
 
     <plugin filename="DockSway" name="dock::DockSway">
       <enabled>true</enabled>
-      <period>4.0</period>
+      <period>5.0</period>
       <heave_amplitude>0.1</heave_amplitude>
       <heave_phase>0.0</heave_phase>
       <sway_amplitude>0.1</sway_amplitude>
