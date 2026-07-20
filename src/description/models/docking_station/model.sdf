@@ -10,21 +10,6 @@
           </mesh>
         </geometry>
       </visual>
-      <collision name="collision">
-        <geometry>
-          <mesh>
-            <uri>model://docking_station/meshes/dock_station.dae</uri>
-          </mesh>
-        </geometry>
-        <surface>
-          <friction>
-            <ode>
-              <mu>0.01</mu>
-              <mu2>0.01</mu2>
-            </ode>
-          </friction>
-        </surface>
-      </collision>
     </link>
 
     <!-- LED array: 4x green emissive spheres at cage front support corners.
