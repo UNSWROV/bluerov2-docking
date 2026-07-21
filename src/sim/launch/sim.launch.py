@@ -94,6 +94,21 @@ def generate_launch_description():
                 ],
                 output="screen",
             ),
+            # Ground-truth dock pose: the dock's PosePublisher emits its true world
+            # pose on the gz topic /model/docking_station/pose. Bridge it to ROS as
+            # /dock/ground_truth/pose so docking trials can score the filter estimate
+            # against ground truth (issue #36). gz -> ROS only (the sim owns the truth).
+            Node(
+                package="ros_gz_bridge",
+                executable="parameter_bridge",
+                arguments=[
+                    "/model/docking_station/pose@geometry_msgs/msg/PoseStamped[gz.msgs.Pose"
+                ],
+                remappings=[
+                    ("/model/docking_station/pose", "/dock/ground_truth/pose"),
+                ],
+                output="screen",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
