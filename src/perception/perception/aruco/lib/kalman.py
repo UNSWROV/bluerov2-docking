@@ -1,19 +1,22 @@
-"""6-state error-state Kalman filter for dock pose in odom frame.
+"""9-state error-state Kalman filter for dock pose in odom frame.
 
-State: [x_dock, y_dock, z_dock, deltarx, deltary, deltarz]
+State: [x_dock, y_dock, z_dock, vx_dock, vy_dock, vz_dock, deltarx, deltary, deltarz]
   - position is tracked directly in metres
   - orientation is tracked as a small-angle perturbation (deltar) about a
     reference quaternion q_ref which is carried alongside the state.
     After each update, the perturbation is absorbed into q_ref and the
     deltar part of the state is zeroed.
 
-Process model (Thesis B): F = I_6 (dock is stationary).
+Process model: F = [   I3      0      0   ]
+                   [   0    dt * I3   0   ]
+                   [   0       0      I3  ]
 Measurement model: identity (measurement IS the pose, in the same frame).
 
 Reference: Ligorio & Sabatini 2013, Sensors 13:1919 error-state EKF template.
 """
 
 import numpy as np
+from scipy.linalg import block_diag
 
 from perception.aruco.lib.geometry import (
     quat_inverse,
@@ -28,9 +31,10 @@ class DockPoseKalmanFilter:
 
     def __init__(self) -> None:
         self._position: np.ndarray | None = None
+        self._velocity: np.ndarray = np.zeros(3)  # m/s
         self._q_ref: np.ndarray | None = None  # reference quaternion
         self._error_state: np.ndarray = np.zeros(
-            6
+            9
         )  # [deltax, deltay, deltaz, deltarx, deltary, deltarz]
         self._covariance: np.ndarray | None = None
 
@@ -44,10 +48,24 @@ class DockPoseKalmanFilter:
         return self._position + self._error_state[:3]
 
     @property
+    def velocity(self) -> np.ndarray:
+        return self._velocity + self._error_state[3:6]
+
+    @property
     def orientation(self) -> np.ndarray:
         assert self._q_ref is not None
-        delta = self._error_state[3:]
+        delta = self._error_state[6:9]
         return quat_multiply(self._q_ref, rotvec_to_quat(delta))
+
+    @property
+    def position_covariance(self) -> np.ndarray:
+        assert self._covariance is not None
+        return self._covariance[:3, :3]
+
+    @property
+    def velocity_covariance(self) -> np.ndarray:
+        assert self._covariance is not None
+        return self._covariance[3:6, 3:6]
 
     @property
     def covariance(self) -> np.ndarray:
@@ -59,17 +77,27 @@ class DockPoseKalmanFilter:
         position: np.ndarray,
         orientation: np.ndarray,
         covariance: np.ndarray,
+        velocity_std: float = 0.0,
     ) -> None:
         assert covariance.shape == (6, 6)
         self._position = position.copy()
+        self._velocity = np.zeros(3)
         self._q_ref = orientation / np.linalg.norm(orientation)
-        self._error_state = np.zeros(6)
-        self._covariance = covariance.copy()
+        self._error_state = np.zeros(9)
+        position_covariance = covariance[:3, :3]
+        velocity_covariance = velocity_std**2 * np.eye(3)
+        rotation_covariance = covariance[3:, 3:]
+        self._covariance = block_diag(
+            position_covariance, velocity_covariance, rotation_covariance
+        )
 
     def predict(self, dt: float, process_noise: np.ndarray) -> None:
-        # F = I: error state doesn't change; covariance grows by Q.
         assert self._covariance is not None
-        self._covariance = self._covariance + process_noise
+        assert self._position is not None
+        self._position += self._velocity * dt
+        F = np.eye(9)
+        F[:3, 3:6] = dt * np.eye(3)
+        self._covariance = F @ self._covariance @ F.T + process_noise
 
     def update(
         self,
@@ -86,31 +114,36 @@ class DockPoseKalmanFilter:
         noise has no meaningful position/rotation cross-correlation).
         """
         assert self.is_initialized
+        assert self._position is not None
+        assert self._q_ref is not None
+        assert self._covariance is not None
         assert measurement_position_covariance.shape == (3, 3)
         assert measurement_rotation_covariance.shape == (3, 3)
 
-        R = np.zeros((6, 6))
-        R[:3, :3] = measurement_position_covariance
-        R[3:, 3:] = measurement_rotation_covariance
+        R = block_diag(measurement_position_covariance, measurement_rotation_covariance)
 
         y_pos = measurement_position - self.position
         delta_q = quat_multiply(quat_inverse(self._q_ref), measurement_orientation)
-        y_rot = quat_to_rotvec(delta_q) - self._error_state[3:]
+        y_rot = quat_to_rotvec(delta_q) - self._error_state[6:]
         y = np.concatenate([y_pos, y_rot])
 
-        # H = I_6 in error-state formulation
-        S = self._covariance + R
-        K = self._covariance @ np.linalg.inv(S)
+        P = self._covariance
+        H = np.zeros((6, 9))
+        H[:3, :3] = np.eye(3)
+        H[-3:, -3:] = np.eye(3)
+        S = H @ P @ H.T + R
+        K = P @ H.T @ np.linalg.inv(S)
 
-        self._error_state = self._error_state + K @ y
-        I6 = np.eye(6)
-        self._covariance = (I6 - K) @ self._covariance
+        self._error_state += K @ y
+        I9 = np.eye(9)
+        self._covariance = (I9 - K @ H) @ P
 
-        # Absorb error-state into nominal: shift position, compose rotation.
-        self._position = self._position + self._error_state[:3]
-        self._q_ref = quat_multiply(self._q_ref, rotvec_to_quat(self._error_state[3:]))
+        # Absorb error-state into nominal: shift position and velocity, compose rotation.
+        self._position += self._error_state[:3]
+        self._velocity += self._error_state[3:6]
+        self._q_ref = quat_multiply(self._q_ref, rotvec_to_quat(self._error_state[6:9]))
         self._q_ref = self._q_ref / np.linalg.norm(self._q_ref)
-        self._error_state = np.zeros(6)
+        self._error_state = np.zeros(9)
 
     def try_update(
         self,
@@ -126,6 +159,9 @@ class DockPoseKalmanFilter:
             self.last_d_sq_total, last_d_sq_pos, last_d_sq_rot, last_innovation
         """
         assert self.is_initialized
+        assert self._position is not None
+        assert self._q_ref is not None
+        assert self._covariance is not None
         R6 = np.zeros((6, 6))
         R6[:3, :3] = measurement_position_covariance
         R6[3:, 3:] = measurement_rotation_covariance
@@ -135,7 +171,11 @@ class DockPoseKalmanFilter:
         y_rot = quat_to_rotvec(delta_q)
         y = np.concatenate([y_pos, y_rot])
 
-        S = self._covariance + R6
+        H = np.zeros((6, 9))
+        H[:3, :3] = np.eye(3)
+        H[-3:, -3:] = np.eye(3)
+
+        S = H @ self._covariance @ H.T + R6
         S_inv = np.linalg.inv(S)
         d_sq = float(y @ S_inv @ y)
         d_sq_pos = float(y_pos @ np.linalg.inv(S[:3, :3]) @ y_pos)
@@ -158,7 +198,7 @@ class DockPoseKalmanFilter:
 
 
 def make_process_noise(dt: float, regime: str) -> np.ndarray:
-    """Process noise covariance Q for the 6-state constant-pose filter.
+    """Process noise covariance Q for the 9-state constant-pose filter.
 
     Q encodes how much we expect the dock's pose to drift between predict
     steps. Larger Q -> filter responds faster to new measurements (less
@@ -167,31 +207,35 @@ def make_process_noise(dt: float, regime: str) -> np.ndarray:
 
     Args:
         dt: timestep since last predict (seconds)
-        regime: "static" | "sway" | "drift"
+        regime: "static" | "sway"
 
     Returns:
-        6x6 positive-definite Q matrix (metres^2 and radians^2 on diagonal).
+        9x9 positive-definite Q matrix (m^2, (m/s)^2 and rad^2 on diagonal).
     """
 
     if regime == "static":
         q_pos = 1e-4 * dt
+        q_vel = 0.0
         q_rot = 1e-4 * dt
+        q = np.zeros((9, 9))
+        q = block_diag(q_pos * np.eye(3), q_vel * np.eye(3), q_rot * np.eye(3))
     elif regime == "sway":
-        q_pos = 1e-2 * dt
-        q_rot = 7.6e-3 * dt
-    elif regime == "drift":
-        q_pos = 9e-2 * dt
-        q_rot = 3e-2 * dt
+        """
+        Builds:
+        Q =  I3 * [ q_a * dt^3/3   q_a * dt^2/2      0     ]
+                  [ q_a * dt^2/2     q_a * dt        0     ]
+                  [       0              0      q_rot * dt ]
+        """
+        q_a = 0.16**2
+        q_rot = 7.6e-3
+        q_axis = np.zeros((6, 6))
+        for i in range(3):
+            q_axis[i, i] = q_a * dt**3 / 3.0
+            q_axis[i, i + 3] = q_a * dt**2 / 2.0
+            q_axis[i + 3, i] = q_a * dt**2 / 2.0
+            q_axis[i + 3, i + 3] = q_a * dt
+        q = block_diag(q_axis, q_rot * dt * np.eye(3))
     else:
-        raise ValueError(
-            f"unknown regime: {regime!r} (expected 'static'|'sway'|'drift')"
-        )
+        raise ValueError(f"unknown regime: {regime!r} (expected 'static'|'sway')")
 
-    q = np.zeros((6, 6))
-    q[0, 0] = q_pos
-    q[1, 1] = q_pos
-    q[2, 2] = q_pos
-    q[3, 3] = q_rot
-    q[4, 4] = q_rot
-    q[5, 5] = q_rot
     return q
