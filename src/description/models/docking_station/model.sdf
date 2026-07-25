@@ -89,7 +89,13 @@
 
     <plugin filename="DockSway" name="dock::DockSway">
       <enabled>true</enabled>
-      <period>5.0</period>
+      <!-- rev 2026-07-23: slowed 5s to 18s. At 5s (0.2Hz) the sway outran the
+           BlueROV2 + ArduSub tracking bandwidth (measured 240ms plant lag), so the
+           vehicle overshot and never velocity-synced for the handoff. 18s (~0.056Hz)
+           is quasi-static, within vehicle authority, and more representative of the
+           low-frequency swell a moored dock sees at depth. Peak sway velocity drops
+           from 0.126 to 0.035 m/s. -->
+      <period>18.0</period>
       <heave_amplitude>0.1</heave_amplitude>
       <heave_phase>0.0</heave_phase>
       <sway_amplitude>0.1</sway_amplitude>
