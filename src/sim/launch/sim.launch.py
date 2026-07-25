@@ -51,6 +51,11 @@ def generate_launch_description():
             DeclareLaunchArgument("use_aruco", default_value="true"),
             DeclareLaunchArgument("use_foxglove", default_value="false"),
             DeclareLaunchArgument("use_control", default_value="false"),
+            # Filter regime, forwarded to aruco.launch.py. "sway" = CV filter + ff
+            # (method); "static" = velocity pinned, ff off (baseline). For ablation.
+            DeclareLaunchArgument("process_noise_regime", default_value="sway"),
+            # Sway-regime WNA density sigma_a; forwarded to aruco.launch.py (#36 trade study).
+            DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -125,6 +130,8 @@ def generate_launch_description():
                 ),
                 launch_arguments={
                     "target_frame": "map",
+                    "process_noise_regime": LaunchConfiguration("process_noise_regime"),
+                    "sway_sigma_a": LaunchConfiguration("sway_sigma_a"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_aruco")),
             ),

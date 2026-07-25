@@ -1,6 +1,7 @@
 from launch import LaunchDescription
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.descriptions import ParameterValue
 from launch.actions import DeclareLaunchArgument, TimerAction
 
 
@@ -30,7 +31,10 @@ NOISE_SCALE_ALPHA_ROT = 0.001
 
 # Health thresholds. See lib/health.py for trade-off notes.
 HEALTHY_MAX_AGE_S = 0.5
-HEALTHY_MAX_POSITION_STD_M = 0.02
+# Moving dock: the sway process-noise regime floors pos_std near 0.033 m (measured
+# vs ground truth, tracking error ~4.5 cm), so the static-calibrated 0.02 blocked the
+# coarse->fine handoff. 0.04 matches the actual estimation accuracy (handoff window ~5 cm).
+HEALTHY_MAX_POSITION_STD_M = 0.04
 STALE_MAX_AGE_S = 3.0
 
 DOCK_POSE_FILTER_LAUNCH_DELAY_S = 5.0
@@ -42,6 +46,12 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("target_frame", default_value="odom"),
+            # Filter process-noise regime: "sway" (9-state CV, estimates dock velocity,
+            # feeds the feedforward) or "static" (velocity pinned to 0 -> ff off, the
+            # pre-#36 baseline). An argument so a batch sweep can ablate the method.
+            DeclareLaunchArgument("process_noise_regime", default_value="sway"),
+            # Sway-regime WNA density sigma_a (m/s^2); velocity-state gain knob (#36).
+            DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
             # Default True: aruco.launch.py is almost always invoked via
             # sim.launch.py during development. Override to False for real-
             # hardware runs where /clock isn't published.
@@ -104,7 +114,13 @@ def generate_launch_description():
                             {
                                 "use_sim_time": use_sim_time,
                                 "predict_rate_hz": 30.0,
-                                "process_noise_regime": "sway",
+                                "process_noise_regime": LaunchConfiguration(
+                                    "process_noise_regime"
+                                ),
+                                "sway_sigma_a": ParameterValue(
+                                    LaunchConfiguration("sway_sigma_a"),
+                                    value_type=float,
+                                ),
                                 "min_markers_for_init": 2,
                                 "healthy_max_age_s": HEALTHY_MAX_AGE_S,
                                 "healthy_max_position_std_m": HEALTHY_MAX_POSITION_STD_M,
