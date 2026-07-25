@@ -10,6 +10,30 @@ from control.guidance import (
     standoff_pose_in_target,
 )
 
+
+def test_world_to_body_at_dock_approach_yaw():
+    """At the ocean.world approach the ROV faces yaw ~270 deg (world -Y, toward the
+    dock front). A dock velocity along world -Y is then straight AHEAD of the
+    vehicle: body (forward, left, up) = (+v, 0, 0)."""
+    from scipy.spatial.transform import Rotation as R
+
+    from control.guidance import world_to_body
+
+    rov_quat = R.from_euler("z", 3.0 * math.pi / 2.0).as_quat()  # (x, y, z, w)
+    v_world = np.array([0.0, -0.126, 0.0])
+    v_body = world_to_body(v_world, rov_quat)
+    np.testing.assert_allclose(v_body, [0.126, 0.0, 0.0], atol=1e-9)
+
+
+def test_world_to_body_identity_at_zero_yaw():
+    from scipy.spatial.transform import Rotation as R
+
+    from control.guidance import world_to_body
+
+    quat = R.from_euler("z", 0.0).as_quat()
+    v = np.array([0.1, -0.2, 0.05])
+    np.testing.assert_allclose(world_to_body(v, quat), v, atol=1e-12)
+
 AIM_OFFSET = (0.0, 0.310, 0.042)  # 401/402 midpoint in dock frame
 
 

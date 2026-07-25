@@ -168,3 +168,22 @@ def test_blocks_on_stale(ros_context):
     assert harness.status and harness.status[-1].phase == FineAlignStatus.BLOCKED
     node.destroy_node()
     harness.destroy_node()
+
+
+def test_ff_absent_falls_back_to_feedback(ros_context):
+    """With FINE active, HEALTHY, a fresh pose, and NO velocity topic ever published,
+    the node must degrade to pure feedback: still commands (nonzero sway to centre a
+    lateral offset) and never crashes on the missing feedforward. Guards the
+    'missing/stale twist -> ff = None' contract."""
+    from control.fine_align_node import FineAlign
+
+    node = FineAlign(parameter_overrides=_load_params())
+    harness = _Harness()
+    harness.send_tf(0, 0, 0, 0, 0, 0, 1)
+    # laterally offset dock; the harness never publishes the velocity twist
+    _run(node, harness, lambda: harness.feed(0.5, 0.4), iterations=15)
+    assert harness.cmds, "expected cmd_vel on the timer"
+    assert any(abs(c.linear.y) > 0.0 for c in harness.cmds), \
+        "feedback must still centre the vehicle with no velocity topic (ff -> None)"
+    node.destroy_node()
+    harness.destroy_node()
