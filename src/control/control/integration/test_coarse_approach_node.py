@@ -12,7 +12,12 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-from geometry_msgs.msg import PoseWithCovarianceStamped, Twist, TransformStamped
+from geometry_msgs.msg import (
+    PoseWithCovarianceStamped,
+    Twist,
+    TransformStamped,
+    TwistWithCovarianceStamped,
+)
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
 from interfaces.msg import FilterHealth, CoarseApproachStatus
@@ -37,6 +42,11 @@ class _Harness(Node):
         )
         self._health_pub = self.create_publisher(
             FilterHealth, "/perception/dock_pose_filtered/health", _RELIABLE
+        )
+        self._twist_pub = self.create_publisher(
+            TwistWithCovarianceStamped,
+            "/perception/dock_pose_filtered/velocity",
+            _RELIABLE,
         )
         self.cmds: list[Twist] = []
         self.status: list[CoarseApproachStatus] = []
@@ -81,6 +91,15 @@ class _Harness(Node):
         h.header.stamp = self.get_clock().now().to_msg()
         h.status = status
         self._health_pub.publish(h)
+
+    def publish_twist(self, vx, vy, vz):
+        m = TwistWithCovarianceStamped()
+        m.header.stamp = self.get_clock().now().to_msg()
+        m.header.frame_id = "map"
+        m.twist.twist.linear.x = float(vx)
+        m.twist.twist.linear.y = float(vy)
+        m.twist.twist.linear.z = float(vz)
+        self._twist_pub.publish(m)
 
 
 def _spin(*nodes, seconds):
@@ -173,6 +192,94 @@ def test_approaches_when_healthy_and_off_target(ros_context):
     moving = [c for c in harness.cmds if c.linear.x > 0.0]
     assert moving, "expected positive surge toward the dock"
     assert any(s.phase == CoarseApproachStatus.APPROACHING for s in harness.status)
+    node.destroy_node()
+    harness.destroy_node()
+
+
+def test_handoff_latches_when_dock_settles(ros_context):
+    """Rev 2026-07-22: a settled, in-tolerance dock latches the handoff. ROV faces
+    world +Y; dock at (0,1,0) puts the standoff (dock + (0,-1,0)) on the ROV, so
+    position + yaw are in tolerance and, with a static dock, the error-derivative
+    decays to zero -> within_vel True -> ready_for_handoff after the debounce."""
+    from control.coarse_approach_node import CoarseApproach
+
+    node = CoarseApproach(parameter_overrides=_load_params())
+    harness = _Harness()
+    qz, qw = math.sin(math.pi / 4), math.cos(math.pi / 4)  # ROV faces world +Y
+    harness.send_tf(0, 0, 0, 0, 0, qz, qw)
+
+    def feed():
+        harness.publish_dock(0.0, 1.0, 0.0)
+        harness.publish_health(FilterHealth.HEALTHY)
+        harness.publish_twist(0.0, 0.0, 0.0)  # settled
+
+    _spin_while_feeding(node, harness, feed, iterations=40, period=0.05)
+
+    assert any(s.ready_for_handoff for s in harness.status), \
+        "a settled, in-tolerance dock must eventually latch the handoff"
+    node.destroy_node()
+    harness.destroy_node()
+
+
+def test_velocity_mismatch_blocks_handoff(ros_context):
+    """Rev 2026-07-22: the velocity-match term keeps the handoff from latching while
+    the dock still moves under the vehicle, even though position is in tolerance. The
+    dock jitters +/-5 cm about (0,1,0): range stays inside the 10 cm position tol, but
+    the standoff-relative speed stays high, so ready_for_handoff must never latch."""
+    from control.coarse_approach_node import CoarseApproach
+
+    node = CoarseApproach(parameter_overrides=_load_params())
+    harness = _Harness()
+    qz, qw = math.sin(math.pi / 4), math.cos(math.pi / 4)
+    harness.send_tf(0, 0, 0, 0, 0, qz, qw)
+
+    toggle = [0]
+
+    def feed():
+        toggle[0] ^= 1
+        dy = 0.05 if toggle[0] else -0.05
+        harness.publish_dock(0.0, 1.0 + dy, 0.0)
+        harness.publish_health(FilterHealth.HEALTHY)
+        harness.publish_twist(0.0, 0.0, 0.0)
+
+    _spin_while_feeding(node, harness, feed, iterations=40, period=0.05)
+
+    assert harness.status, "expected status telemetry"
+    assert not any(s.ready_for_handoff for s in harness.status), \
+        "a dock still moving under the vehicle must NOT latch the handoff"
+    # position IS in tolerance -> proves the block is the velocity gate, not position
+    assert any(s.within_position_tol for s in harness.status)
+    node.destroy_node()
+    harness.destroy_node()
+
+
+def test_feedforward_biases_command_toward_dock_velocity(ros_context):
+    """Rev 2026-07-22: coarse feeds the dock velocity forward. ROV sits at the standoff
+    (feedback ~0) facing world +Y; the dock slides along world +X at 0.1 m/s. For a
+    ROV facing +Y, world +X is body -Y, so the wired feedforward should command a
+    steady negative sway ~ -0.1 (distance ramp is saturated at the standoff)."""
+    from control.coarse_approach_node import CoarseApproach
+
+    node = CoarseApproach(parameter_overrides=_load_params())
+    harness = _Harness()
+    qz, qw = math.sin(math.pi / 4), math.cos(math.pi / 4)  # ROV faces world +Y
+    harness.send_tf(0, 0, 0, 0, 0, qz, qw)
+
+    def feed():
+        harness.publish_dock(0.0, 1.0, 0.0)
+        harness.publish_health(FilterHealth.HEALTHY)
+        harness.publish_twist(0.1, 0.0, 0.0)  # dock slides along world +X
+
+    _spin_while_feeding(node, harness, feed, iterations=30, period=0.05)
+
+    sways = sorted(c.linear.y for c in harness.cmds[-10:])
+    assert sways, "expected cmd_vel"
+    median_sway = sways[len(sways) // 2]
+    # ROV faces +Y, dock slides world +X -> ff drives body -Y (sway), scaled by
+    # ff_velocity_gain (cmd_vel is effort-like, so ff is converted to command units).
+    # Assert the wiring + sign + order of magnitude; the exact scale is a tuning param.
+    assert -0.15 < median_sway < -0.02, \
+        f"feedforward should drive a modest negative sway (got {median_sway})"
     node.destroy_node()
     harness.destroy_node()
 

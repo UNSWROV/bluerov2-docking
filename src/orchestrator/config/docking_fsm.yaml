@@ -2,7 +2,12 @@ docking_fsm:
   ros__parameters:
     use_sim_time: true
     tick_rate_hz: 10.0
-    loss_timeout_cycles: 20       # ~2 s of sustained loss before demote
+    # NOTE (rev 2026-07-23): the demote-on-loss is a SAFETY back-off, not just a nuisance.
+    # Raising it to 40 let the vehicle linger at the dock face after losing the markers
+    # (close-range blackout) until it froze there, clipped into the collision-less dock
+    # (trial auto_103916). Reverted to 20. The real fix is to seat BEFORE the blind zone
+    # (fine_pbvs seated_range_m), so this loss path rarely fires in normal docking.
+    loss_timeout_cycles: 20       # ~2 s of sustained loss before demote (protective back-off)
     drift_timeout_cycles: 10      # ~1 s past demote range before demote
     demote_range_m: 1.5           # FINE -> COARSE if range exceeds this
     coarse_mode: "ALT_HOLD"     # COARSE: autopilot holds depth during the transit
