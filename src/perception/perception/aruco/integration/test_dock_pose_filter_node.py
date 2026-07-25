@@ -15,6 +15,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from geometry_msgs.msg import (
     PoseWithCovarianceStamped,
     TransformStamped,
+    TwistWithCovarianceStamped,
 )
 from tf2_ros.static_transform_broadcaster import StaticTransformBroadcaster
 
@@ -44,6 +45,7 @@ def _make_harness(FilterHealth):
             )
             self._filtered_received: list[PoseWithCovarianceStamped] = []
             self._health_received = []
+            self._twist_received: list[TwistWithCovarianceStamped] = []
             self.create_subscription(
                 PoseWithCovarianceStamped,
                 "/perception/dock_pose_filtered",
@@ -54,6 +56,12 @@ def _make_harness(FilterHealth):
                 FilterHealth,
                 "/perception/dock_pose_filtered/health",
                 lambda m: self._health_received.append(m),
+                _BEST_EFFORT_QOS,
+            )
+            self.create_subscription(
+                TwistWithCovarianceStamped,
+                "/perception/dock_pose_filtered/velocity",
+                lambda m: self._twist_received.append(m),
                 _BEST_EFFORT_QOS,
             )
             self._tf = StaticTransformBroadcaster(self)
@@ -172,6 +180,59 @@ def test_single_marker_measurement_does_not_initialize(ros_context):
     assert harness._health_received  # health is still being published
     for h in harness._health_received:
         assert h.status == FilterHealth.WARMING_UP
+
+    node_under_test.destroy_node()
+    harness.destroy_node()
+
+
+def test_publishes_velocity_twist(ros_context):
+    """The node publishes a velocity twist alongside the filtered pose: same frame,
+    zero angular part (no angular-velocity states), and in the default static regime
+    a near-zero linear velocity (velocity is pinned)."""
+    from perception.aruco.dock_pose_filter import DockPoseFilter
+    node_under_test = DockPoseFilter()
+    node_under_test.set_parameters([
+        rclpy.parameter.Parameter(
+            "healthy_max_position_std_m",
+            rclpy.parameter.Parameter.Type.DOUBLE,
+            0.1,
+        )
+    ])
+    harness = _make_harness(FilterHealth)
+
+    exec_ = SingleThreadedExecutor()
+    exec_.add_node(node_under_test)
+    exec_.add_node(harness)
+
+    stop = threading.Event()
+    t = threading.Thread(
+        target=lambda: [exec_.spin_once(timeout_sec=0.05) for _ in iter(lambda: not stop.is_set(), False)],
+        daemon=True,
+    )
+    t.start()
+
+    time.sleep(0.3)  # let TF propagate
+    harness.publish_fused(1.0, 2.0, 3.0)
+    time.sleep(0.1)
+    harness.publish_fused(1.0, 2.0, 3.0)
+    time.sleep(0.5)
+
+    stop.set()
+    t.join(timeout=1.0)
+
+    assert len(harness._twist_received) >= 1
+    tw = harness._twist_received[-1]
+    # twist rides the pose's frame (co-stamped by construction in the node)
+    assert tw.header.frame_id == "odom"
+    # no angular-velocity states -> angular part is exactly zero
+    assert tw.twist.twist.angular.x == 0.0
+    assert tw.twist.twist.angular.y == 0.0
+    assert tw.twist.twist.angular.z == 0.0
+    # covariance is a full 6x6 (36), not a raw 3x3
+    assert len(tw.twist.covariance) == 36
+    # static regime (node default) pins velocity near zero
+    lin = tw.twist.twist.linear
+    assert abs(lin.x) < 0.05 and abs(lin.y) < 0.05 and abs(lin.z) < 0.05
 
     node_under_test.destroy_node()
     harness.destroy_node()

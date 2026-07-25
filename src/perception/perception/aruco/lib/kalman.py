@@ -29,7 +29,7 @@ from perception.aruco.lib.geometry import (
 class DockPoseKalmanFilter:
     """Error-state Kalman filter for a static dock in odom frame."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_speed: float | None = None) -> None:
         self._position: np.ndarray | None = None
         self._velocity: np.ndarray = np.zeros(3)  # m/s
         self._q_ref: np.ndarray | None = None  # reference quaternion
@@ -37,6 +37,11 @@ class DockPoseKalmanFilter:
             9
         )  # [deltax, deltay, deltaz, deltarx, deltary, deltarz]
         self._covariance: np.ndarray | None = None
+        # Physical bound on the dock's speed. The dock cannot move faster than this;
+        # clamping the velocity STATE to it (default None = off) stops the ego-motion
+        # feedback loop from extrapolating the estimate to metres/s under vehicle
+        # motion. See the moving-dock docking analysis (#36).
+        self._max_speed = max_speed
 
     @property
     def is_initialized(self) -> bool:
@@ -66,6 +71,11 @@ class DockPoseKalmanFilter:
     def velocity_covariance(self) -> np.ndarray:
         assert self._covariance is not None
         return self._covariance[3:6, 3:6]
+
+    @property
+    def rotation_covariance(self) -> np.ndarray:
+        assert self._covariance is not None
+        return self._covariance[6:9, 6:9]
 
     @property
     def covariance(self) -> np.ndarray:
@@ -141,6 +151,13 @@ class DockPoseKalmanFilter:
         # Absorb error-state into nominal: shift position and velocity, compose rotation.
         self._position += self._error_state[:3]
         self._velocity += self._error_state[3:6]
+        # Clamp to the physical dock-speed bound (isotropic). A measurement that implies
+        # a faster dock is ego-motion leaking through the transform, not real dock
+        # motion; capping the state breaks the extrapolation runaway.
+        if self._max_speed is not None:
+            speed = float(np.linalg.norm(self._velocity))
+            if speed > self._max_speed:
+                self._velocity *= self._max_speed / speed
         self._q_ref = quat_multiply(self._q_ref, rotvec_to_quat(self._error_state[6:9]))
         self._q_ref = self._q_ref / np.linalg.norm(self._q_ref)
         self._error_state = np.zeros(9)
@@ -197,7 +214,7 @@ class DockPoseKalmanFilter:
         return True
 
 
-def make_process_noise(dt: float, regime: str) -> np.ndarray:
+def make_process_noise(dt: float, regime: str, sigma_a: float = 0.16) -> np.ndarray:
     """Process noise covariance Q for the 9-state constant-pose filter.
 
     Q encodes how much we expect the dock's pose to drift between predict
@@ -208,6 +225,10 @@ def make_process_noise(dt: float, regime: str) -> np.ndarray:
     Args:
         dt: timestep since last predict (seconds)
         regime: "static" | "sway"
+        sigma_a: sway-regime white-noise-acceleration density (m/s^2). Sets the
+            velocity-state gain: higher tracks a faster dock but also amplifies
+            ego-motion leakage into the velocity state (#36); tunable for the
+            stability-vs-tracking trade study. Ignored in the static regime.
 
     Returns:
         9x9 positive-definite Q matrix (m^2, (m/s)^2 and rad^2 on diagonal).
@@ -226,7 +247,7 @@ def make_process_noise(dt: float, regime: str) -> np.ndarray:
                   [ q_a * dt^2/2     q_a * dt        0     ]
                   [       0              0      q_rot * dt ]
         """
-        q_a = 0.16**2
+        q_a = sigma_a**2
         q_rot = 7.6e-3
         q_axis = np.zeros((6, 6))
         for i in range(3):
