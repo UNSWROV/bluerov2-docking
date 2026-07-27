@@ -45,7 +45,6 @@
          Tune Y if depth axis differs in exported DAE. -->
 
     <link name="led_top_left">
-      <gravity>false</gravity>
       <pose>-0.35 -0.31 0.455 0 0 0</pose>
       <gravity>false</gravity>
       <visual name="visual">
@@ -63,7 +62,6 @@
     </link>
 
     <link name="led_top_right">
-      <gravity>false</gravity>
       <pose>0.35 -0.31 0.455 0 0 0</pose>
       <gravity>false</gravity>
       <visual name="visual">
@@ -81,7 +79,6 @@
     </link>
 
     <link name="led_bottom_left">
-      <gravity>false</gravity>
       <pose>-0.35 -0.31 -0.075 0 0 0</pose>
       <gravity>false</gravity>
       <visual name="visual">
@@ -99,7 +96,6 @@
     </link>
 
     <link name="led_bottom_right">
-      <gravity>false</gravity>
       <pose>0.35 -0.31 -0.075 0 0 0</pose>
       <gravity>false</gravity>
       <visual name="visual">
