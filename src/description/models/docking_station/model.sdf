@@ -1,7 +1,12 @@
 <?xml version="1.0"?>
-<sdf version="1.6">
+<sdf version="1.11">
   <model name="docking_station">
     <link name="link">
+      <!-- gravity must stay disabled on every link: the dock is dynamic (DockSway
+           moves it via SetWorldPoseCmd, which fixes pose but not velocity), so
+           gravity accumulates velocity and the body free-falls metres between
+           pose snaps (measured z jumping -1.8 to -5.25 m). See #58. -->
+      <gravity>false</gravity>
       <visual name="visual">
         <geometry>
           <mesh>
@@ -20,6 +25,7 @@
 
     <link name="led_top_left">
       <pose>-0.35 -0.31 0.455 0 0 0</pose>
+      <gravity>false</gravity>
       <visual name="visual">
         <geometry>
           <sphere>
@@ -36,6 +42,7 @@
 
     <link name="led_top_right">
       <pose>0.35 -0.31 0.455 0 0 0</pose>
+      <gravity>false</gravity>
       <visual name="visual">
         <geometry>
           <sphere>
@@ -52,6 +59,7 @@
 
     <link name="led_bottom_left">
       <pose>-0.35 -0.31 -0.075 0 0 0</pose>
+      <gravity>false</gravity>
       <visual name="visual">
         <geometry>
           <sphere>
@@ -68,6 +76,7 @@
 
     <link name="led_bottom_right">
       <pose>0.35 -0.31 -0.075 0 0 0</pose>
+      <gravity>false</gravity>
       <visual name="visual">
         <geometry>
           <sphere>
