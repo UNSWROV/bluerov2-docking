@@ -1,7 +1,11 @@
 <?xml version="1.0"?>
-<sdf version="1.6">
+<sdf version="1.11">
   <model name="docking_station">
     <link name="link">
+      <!-- gravity must stay disabled on every link: the dock is dynamic (DockSway
+           moves it via SetWorldPoseCmd, which fixes pose but not velocity), so
+           gravity accumulates velocity and the body free-falls metres between
+           pose snaps (measured z jumping -1.8 to -5.25 m). See #58. -->
       <gravity>false</gravity>
       <visual name="visual">
         <geometry>
@@ -10,20 +14,26 @@
           </mesh>
         </geometry>
       </visual>
+      <!-- Convex decomposition (Harmonic mesh optimization): DART cannot collide a
+           dynamic concave trimesh, and the dock must stay dynamic for DockSway.
+           Decomposing the cage into convex hulls at load gives stable contact on a
+           dynamic body and never exercises the fragile ODE trimesh-trimesh path.
+           max_convex_hulls must stay high enough to preserve the entry cavity. -->
       <collision name="collision">
         <geometry>
-          <mesh>
+          <mesh optimization="convex_decomposition">
+            <convex_decomposition>
+              <!-- Keep the hull count low: DART's ODE detector treats each hull
+                   as a trimesh, so seated contact costs O(hulls x ROV meshes)
+                   trimesh pairs per step. 64 hulls overflowed ODE's contact
+                   hash and stalled the sim whenever the vehicle rested in the
+                   cage. Must stay high enough to keep the entry cavity open. -->
+              <max_convex_hulls>16</max_convex_hulls>
+            </convex_decomposition>
             <uri>model://docking_station/meshes/dock_station.dae</uri>
           </mesh>
         </geometry>
-        <surface>
-          <friction>
-            <ode>
-              <mu>0.01</mu>
-              <mu2>0.01</mu2>
-            </ode>
-          </friction>
-        </surface>
+        <max_contacts>6</max_contacts>
       </collision>
     </link>
 
@@ -35,8 +45,8 @@
          Tune Y if depth axis differs in exported DAE. -->
 
     <link name="led_top_left">
-      <gravity>false</gravity>
       <pose>-0.35 -0.31 0.455 0 0 0</pose>
+      <gravity>false</gravity>
       <visual name="visual">
         <geometry>
           <sphere>
@@ -52,8 +62,8 @@
     </link>
 
     <link name="led_top_right">
-      <gravity>false</gravity>
       <pose>0.35 -0.31 0.455 0 0 0</pose>
+      <gravity>false</gravity>
       <visual name="visual">
         <geometry>
           <sphere>
@@ -69,8 +79,8 @@
     </link>
 
     <link name="led_bottom_left">
-      <gravity>false</gravity>
       <pose>-0.35 -0.31 -0.075 0 0 0</pose>
+      <gravity>false</gravity>
       <visual name="visual">
         <geometry>
           <sphere>
@@ -86,8 +96,8 @@
     </link>
 
     <link name="led_bottom_right">
-      <gravity>false</gravity>
       <pose>0.35 -0.31 -0.075 0 0 0</pose>
+      <gravity>false</gravity>
       <visual name="visual">
         <geometry>
           <sphere>
@@ -104,7 +114,13 @@
 
     <plugin filename="DockSway" name="dock::DockSway">
       <enabled>true</enabled>
-      <period>4.0</period>
+      <!-- rev 2026-07-23: slowed 5s to 18s. At 5s (0.2Hz) the sway outran the
+           BlueROV2 + ArduSub tracking bandwidth (measured 240ms plant lag), so the
+           vehicle overshot and never velocity-synced for the handoff. 18s (~0.056Hz)
+           is quasi-static, within vehicle authority, and more representative of the
+           low-frequency swell a moored dock sees at depth. Peak sway velocity drops
+           from 0.126 to 0.035 m/s. -->
+      <period>18.0</period>
       <heave_amplitude>0.1</heave_amplitude>
       <heave_phase>0.0</heave_phase>
       <sway_amplitude>0.1</sway_amplitude>

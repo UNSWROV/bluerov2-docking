@@ -10,7 +10,11 @@ including a debounced `seated` flag the FSM reads to advance to DOCKED.
 """
 
 import rclpy
-from geometry_msgs.msg import Twist, PoseWithCovarianceStamped
+from geometry_msgs.msg import (
+    Twist,
+    PoseWithCovarianceStamped,
+    TwistWithCovarianceStamped,
+)
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
@@ -54,6 +58,7 @@ class FineAlign(Node):
             "degraded_gain_scale",
             "control_rate_hz",
             "max_pose_age_s",
+            "max_twist_age_s",
             "kp_surge",
             "kd_surge",
             "kp_sway",
@@ -68,6 +73,7 @@ class FineAlign(Node):
             "v_max_yaw",
             "approach_speed_slope",
             "approach_speed_floor",
+            "ff_vel_max",
         ):
             self.declare_parameter(name, ptype.DOUBLE)
 
@@ -76,6 +82,8 @@ class FineAlign(Node):
         self._seated = False
         self._latest_pose: PoseWithCovarianceStamped | None = None
         self._latest_pose_t: float | None = None
+        self._latest_twist: TwistWithCovarianceStamped | None = None
+        self._latest_twist_t: float | None = None
         self._latest_health: int | None = None
         self._latest_state: int | None = None
 
@@ -95,6 +103,12 @@ class FineAlign(Node):
             PoseWithCovarianceStamped,
             "/perception/dock_pose_filtered",
             self._on_pose,
+            qos,
+        )
+        self.create_subscription(
+            TwistWithCovarianceStamped,
+            "/perception/dock_pose_filtered/velocity",
+            self._on_twist,
             qos,
         )
         self.create_subscription(
@@ -122,6 +136,7 @@ class FineAlign(Node):
             v_max_sway=g("v_max_sway"),
             v_max_heave=g("v_max_heave"),
             v_max_yaw=g("v_max_yaw"),
+            ff_vel_max=g("ff_vel_max"),
         )
 
     def _align_tol(self) -> fg.AlignTol:
@@ -147,6 +162,10 @@ class FineAlign(Node):
         self._latest_pose = msg
         self._latest_pose_t = self.get_clock().now().nanoseconds * 1e-9
 
+    def _on_twist(self, msg: TwistWithCovarianceStamped) -> None:
+        self._latest_twist = msg
+        self._latest_twist_t = self.get_clock().now().nanoseconds * 1e-9
+
     def _on_health(self, msg: FilterHealth) -> None:
         self._latest_health = int(msg.status)
 
@@ -159,6 +178,15 @@ class FineAlign(Node):
         age = self.get_clock().now().nanoseconds * 1e-9 - self._latest_pose_t
         max_age = (
             self.get_parameter("max_pose_age_s").get_parameter_value().double_value
+        )
+        return age < 0.0 or age > max_age
+
+    def _twist_too_old(self) -> bool:
+        if self._latest_twist_t is None:
+            return True
+        age = self.get_clock().now().nanoseconds * 1e-9 - self._latest_twist_t
+        max_age = (
+            self.get_parameter("max_twist_age_s").get_parameter_value().double_value
         )
         return age < 0.0 or age > max_age
 
@@ -250,7 +278,23 @@ class FineAlign(Node):
             yaw_to_boresight=True,
         )
 
-        cmd = self._controller.step(g.rel_pos_body, g.yaw_err, self._dt)
+        # Dock-velocity feedforward. Missing or stale twist -> None (pure feedback).
+        # Fine passes full authority (it operates at close range where a coarse-style
+        # distance ramp would already be ~1). Rotate world -> body with the SAME rov
+        # quaternion compute_guidance used. Health scaling rides the gain_scale multiply
+        # below, which now scales feedback + feedforward together.
+        if self._latest_twist is None or self._twist_too_old():
+            ff_vel_body = None
+        else:
+            lin = self._latest_twist.twist.twist.linear
+            ff_vel_body = guidance_lib.world_to_body(
+                (lin.x, lin.y, lin.z),
+                (rov.rotation.x, rov.rotation.y, rov.rotation.z, rov.rotation.w),
+            )
+
+        cmd = self._controller.step(
+            g.rel_pos_body, g.yaw_err, self._dt, ff_vel_body=ff_vel_body
+        )
         is_aligned = fg.aligned(g.rel_pos_body, g.yaw_err, self._align_tol())
         cmd = fg.advance_command(cmd, is_aligned)
 

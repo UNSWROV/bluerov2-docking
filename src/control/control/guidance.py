@@ -40,6 +40,11 @@ class GuidanceResult:
     range_to_dock_m: float  # distance from ROV to the dock (aim point)
 
 
+def world_to_body(vec_world, rov_quat_xyzw):
+    """Rotate a world-frame vector into the ROV body frame (forward, left, up)."""
+    return Rotation.from_quat(rov_quat_xyzw).inv().apply(vec_world)
+
+
 def compute_guidance(
     dock_pos,
     dock_quat_xyzw,

@@ -24,6 +24,7 @@ class PbvsParams:
     v_max_sway: float  # m/s
     v_max_heave: float  # m/s
     v_max_yaw: float  # rad/s
+    ff_vel_max: float = 0.25  # rad/s
 
 
 @dataclass(frozen=True)
@@ -57,6 +58,20 @@ def approach_speed_limit(
     return float(np.clip(slope_per_s * range_to_dock_m, v_floor, v_ceiling))
 
 
+def ff_authority_ramp(range_to_standoff_m: float, far_m: float, near_m: float) -> float:
+    """Distance-gated feedforward authority in [0, 1] (rev 2026-07-22).
+
+    Returns 0 when range_to_standoff_m >= far_m, ramps LINEARLY to 1 by the time
+    range_to_standoff_m <= near_m, and clips to [0, 1] outside that band. The
+    endpoints are inverted vs approach_speed_limit: feedforward GROWS as the ROV
+    closes on the standoff. Far out, the dock-velocity estimate is noisy (few, small
+    markers) and the ~0.13 m/s sway is second-order while the ROV is still closing
+    fast; near the standoff, velocity sync is exactly what lets the position error
+    settle enough to hand off to fine. Assumes far_m > near_m.
+    """
+    return float(np.clip((far_m - range_to_standoff_m) / (far_m - near_m), 0.0, 1.0))
+
+
 class PbvsController:
     """Decoupled P/PD regulator: body-frame error to body velocity command."""
 
@@ -71,10 +86,20 @@ class PbvsController:
         self._prev_vertical: float | None = None
         self._prev_yaw_err: float | None = None
 
-    def step(self, rel_pos_body: np.ndarray, yaw_err: float, dt: float) -> CmdVel:
+    def step(
+        self,
+        rel_pos_body: np.ndarray,
+        yaw_err: float,
+        dt: float,
+        ff_vel_body: float | None = None,
+    ) -> CmdVel:
         """Compute one velocity command from the current relative dock pose."""
 
         range_ahead, lateral_left, vertical_up = rel_pos_body
+
+        ff = (
+            np.zeros(3) if ff_vel_body is None else np.asarray(ff_vel_body, dtype=float)
+        )
 
         # PD on the forward axis: kd_surge damps the closing velocity so the
         # vehicle brakes as it nears the target instead of coasting through it
@@ -83,19 +108,19 @@ class PbvsController:
             self._p.kp_surge * range_ahead
             + self._p.kd_surge * rate(range_ahead, self._prev_forward) / dt,
             self._p.v_max_surge,
-        )
+        ) + clamp(ff[0], self._p.ff_vel_max)
 
         sway = clamp(
             self._p.kp_sway * lateral_left
             + self._p.kd_sway * rate(lateral_left, self._prev_lateral) / dt,
             self._p.v_max_sway,
-        )
+        ) + clamp(ff[1], self._p.ff_vel_max)
 
         heave = clamp(
             self._p.kp_heave * vertical_up
             + self._p.kd_heave * rate(vertical_up, self._prev_vertical) / dt,
             self._p.v_max_heave,
-        )
+        ) + clamp(ff[2], self._p.ff_vel_max)
 
         yaw_rate = clamp(
             self._p.kp_yaw * yaw_err

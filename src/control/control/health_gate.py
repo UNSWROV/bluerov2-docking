@@ -47,6 +47,9 @@ class Tolerances:
     axis_offset_m: float
     yaw_rad: float
     debounce_cycles: int
+    # rev 2026-07-22: standoff-relative speed cap for the velocity-match handoff term.
+    # Defaulted so existing constructions and tests keep working; the coarse node sets it.
+    vel_match_m_s: float = 0.05
 
 
 def within_tolerances(
@@ -62,6 +65,19 @@ def within_tolerances(
     return within_pos, within_yaw
 
 
+def within_velocity(rel_speed_m_s: float, vel_match_m_s: float) -> bool:
+    """Velocity-match term for the coarse->fine handoff (rev 2026-07-22).
+
+    rel_speed_m_s is |d(rel_pos_body)/dt|: how fast the standoff-relative position is
+    still changing, computed by the coarse node across consecutive control cycles. A
+    True result means the ROV has nulled enough of the dock's motion to hand off. This
+    guards against latching AT_STANDOFF at a sway zero-crossing, where the position
+    error is momentarily inside tolerance but the dock (and the ROV chasing it) is
+    moving fastest, exactly the wrong instant to enter the tight fine-alignment cage.
+    """
+    return rel_speed_m_s < vel_match_m_s
+
+
 def decide_phase(
     blocked: bool,
     within_pos: bool,
@@ -70,6 +86,7 @@ def decide_phase(
     ready_counter: int,
     was_ready: bool,
     tol: Tolerances,
+    within_vel: bool = True,
 ) -> tuple[int, bool, int]:
     """Return (phase, ready_for_handoff, new_ready_counter).
 
@@ -77,10 +94,15 @@ def decide_phase(
     otherwise, clamped to [0, debounce_cycles]. Latch AT_STANDOFF once the counter
     reaches debounce_cycles; stay latched until it decays to 0. This needs a
     sustained fall out of tolerance to drop ready, so it does not flicker at the
-    tolerance boundary."""
+    tolerance boundary.
+
+    within_vel (rev 2026-07-22) is the velocity-match term; it defaults True so
+    pre-revision callers and tests are unaffected. The coarse node passes the result
+    of within_velocity(), so a moving dock cannot latch the handoff on position alone.
+    """
     if blocked:
         return BLOCKED, False, 0
-    good = within_pos and within_yaw and healthy
+    good = within_pos and within_yaw and within_vel and healthy
     counter = ready_counter + 1 if good else ready_counter - 1
     counter = max(0, min(counter, tol.debounce_cycles))
     ready = counter > 0 if was_ready else counter >= tol.debounce_cycles

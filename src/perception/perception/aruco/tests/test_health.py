@@ -51,6 +51,7 @@ def test_stale_when_long_silence():
 
 
 def test_degraded_when_uncertainty_too_large_even_if_recent():
+    # DEFAULT has no covariance ceiling (inf): high uncertainty stays DEGRADED.
     result = classify_health(
         seconds_since_init=5.0,
         seconds_since_last_update=0.1,
@@ -58,3 +59,22 @@ def test_degraded_when_uncertainty_too_large_even_if_recent():
         thresholds=DEFAULT,
     )
     assert result == FilterHealth.DEGRADED
+
+
+def test_stale_when_uncertainty_exceeds_covariance_ceiling():
+    # With a finite stale_max_position_std_m, a blown-up covariance blocks (STALE) even
+    # when the last update was recent, so the controller holds instead of driving on it
+    # (markers out of frame during fine -> covariance blows up -> would clip the dock).
+    thr = HealthThresholds(
+        healthy_max_age_s=0.5,
+        healthy_max_position_std_m=0.02,
+        stale_max_age_s=3.0,
+        stale_max_position_std_m=0.15,
+    )
+    result = classify_health(
+        seconds_since_init=5.0,
+        seconds_since_last_update=0.1,
+        position_std_m=0.5,
+        thresholds=thr,
+    )
+    assert result == FilterHealth.STALE
