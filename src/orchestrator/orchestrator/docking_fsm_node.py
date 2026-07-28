@@ -178,12 +178,20 @@ class IdleState(State):
         self._node = node
 
     def execute(self, blackboard) -> str:  # type: ignore
-        # Re-arm on idle so manual control works after a DOCKED disarm (no-op if
-        # already armed). DOCKED disarms; IDLE re-arms -- symmetric.
-        self._node.vehicle_io.set_arm(True)
+        # Re-arm on idle so manual control works after a DOCKED disarm. A single
+        # arming call can fail transiently (mavros command service ack timeouts),
+        # which left the vehicle disarmed and deaf to the sticks, so IDLE retries
+        # periodically instead of fire-and-forget. Re-arming an armed vehicle is a
+        # no-op, so the retry is also self-healing against a later auto-disarm.
         self._node.vehicle_io.set_mode(self._node.param_str("idle_mode"))
         period = 1.0 / self._node.param_double("tick_rate_hz")
+        arm_retry_s = 3.0
+        next_arm_t = 0.0
         while rclpy.ok() and not self._node._stop.is_set():
+            now = time.monotonic()
+            if now >= next_arm_t:
+                self._node.vehicle_io.set_arm(True)
+                next_arm_t = now + arm_retry_s
             self._node.publish_state(DockingStateMsg.IDLE, "IDLE")
             if self._node._engaged:
                 return Outcome.ENGAGE

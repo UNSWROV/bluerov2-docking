@@ -9,6 +9,7 @@ import rclpy
 from geometry_msgs.msg import (
     PoseWithCovarianceStamped,
     TransformStamped,
+    TwistWithCovarianceStamped,
 )
 from rclpy.duration import Duration
 from rclpy.node import Node
@@ -62,8 +63,23 @@ class DockPoseFilter(Node):
         self.declare_parameter("healthy_max_age_s", 0.5)
         self.declare_parameter("healthy_max_position_std_m", 0.02)
         self.declare_parameter("stale_max_age_s", 3.0)
+        # Covariance ceiling: above this position sigma the estimate is too uncertain to
+        # drive on (markers out of frame during fine -> covariance blows up), so report
+        # STALE and let the controller hold instead of creeping into the dock blind.
+        self.declare_parameter("stale_max_position_std_m", 0.15)
+        # Physical cap on the estimated dock speed (m/s); <=0 disables. Bounds the CV
+        # velocity state so ego-motion leaking through the transform can't be
+        # extrapolated into a runaway estimate under vehicle motion (#36).
+        self.declare_parameter("max_dock_speed_m_s", 0.2)
+        # Sway-regime WNA density (m/s^2). Velocity-state gain knob for the
+        # stability-vs-tracking trade study (#36): high tracks a fast dock but
+        # amplifies ego-motion leakage; low stiffens toward the static filter.
+        self.declare_parameter("sway_sigma_a", 0.16)
 
-        self._kf = DockPoseKalmanFilter()
+        _max_speed = (
+            self.get_parameter("max_dock_speed_m_s").get_parameter_value().double_value
+        )
+        self._kf = DockPoseKalmanFilter(max_speed=_max_speed if _max_speed > 0 else None)
         self._last_update_wall_t: float | None = None
         self._init_wall_t: float = time.monotonic()
         self._node_start_t: float = time.monotonic()
@@ -89,6 +105,11 @@ class DockPoseFilter(Node):
 
         self._pub_pose = self.create_publisher(
             PoseWithCovarianceStamped, "/perception/dock_pose_filtered", pub_qos
+        )
+        self._pub_twist = self.create_publisher(
+            TwistWithCovarianceStamped,
+            "/perception/dock_pose_filtered/velocity",
+            pub_qos,
         )
         self._pub_health = self.create_publisher(
             FilterHealthMsg, "/perception/dock_pose_filtered/health", pub_qos
@@ -116,6 +137,9 @@ class DockPoseFilter(Node):
             .get_parameter_value()
             .double_value,
             stale_max_age_s=self.get_parameter("stale_max_age_s")
+            .get_parameter_value()
+            .double_value,
+            stale_max_position_std_m=self.get_parameter("stale_max_position_std_m")
             .get_parameter_value()
             .double_value,
         )
@@ -193,7 +217,13 @@ class DockPoseFilter(Node):
                 .get_parameter_value()
                 .double_value
             )
-            self._kf.initialize(pos, quat, cov * inflation)
+            regime = (
+                self.get_parameter("process_noise_regime")
+                .get_parameter_value()
+                .string_value
+            )
+            velocity_std = 0.2 if regime == "sway" else 0.0
+            self._kf.initialize(pos, quat, cov * inflation, velocity_std)
             self._last_update_wall_t = time.monotonic()
             return
 
@@ -249,6 +279,9 @@ class DockPoseFilter(Node):
                 regime=self.get_parameter("process_noise_regime")
                 .get_parameter_value()
                 .string_value,
+                sigma_a=self.get_parameter("sway_sigma_a")
+                .get_parameter_value()
+                .double_value,
             )
             self._kf.predict(dt=dt, process_noise=q)
 
@@ -272,8 +305,22 @@ class DockPoseFilter(Node):
             msg.pose.pose.orientation.y = float(q_out[1])
             msg.pose.pose.orientation.z = float(q_out[2])
             msg.pose.pose.orientation.w = float(q_out[3])
-            msg.pose.covariance = self._kf.covariance.flatten().tolist()
+            pose_cov = np.zeros((6, 6))
+            pose_cov[:3, :3] = self._kf.position_covariance
+            pose_cov[3:, 3:] = self._kf.rotation_covariance
+            msg.pose.covariance = pose_cov.flatten().tolist()
             self._pub_pose.publish(msg)
+
+            tw = TwistWithCovarianceStamped()
+            tw.header = msg.header
+            tw.twist.twist.linear.x = float(self._kf.velocity[0])
+            tw.twist.twist.linear.y = float(self._kf.velocity[1])
+            tw.twist.twist.linear.z = float(self._kf.velocity[2])
+            tw_cov = np.zeros((6, 6))
+            tw_cov[:3, :3] = self._kf.velocity_covariance
+            tw_cov[3:, 3:] = 1e6 * np.eye(3)  # angular: no estimate
+            tw.twist.covariance = tw_cov.flatten().tolist()
+            self._pub_twist.publish(tw)
 
             tf_msg = TransformStamped()
             tf_msg.header.stamp = stamp

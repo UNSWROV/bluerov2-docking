@@ -19,6 +19,10 @@ fine_align:
     approach_speed_slope: 0.10
     approach_speed_floor: 0.02
 
+    # dock-velocity feedforward clamp (dock-relative): bounds the ff term by vehicle
+    # authority so a fast dock degrades by lagging, not by starving the feedback loop.
+    ff_vel_max: 0.25
+
     target_frame: "map"
     aim_offset_in_dock: [0.0, 0.0, 0.0]   # aim at the true dock entry (pose origin)
     standoff_distance_m: 0.0
@@ -30,9 +34,15 @@ fine_align:
     align_yaw_tol_rad: 0.05
 
     # seated_range_m = definition-of-done: within it (debounced) the FSM goes DOCKED
-    # and disarms, freezing the vehicle. Tighter docks closer but the PD creeps
-    # slowly in the final cm, risking a never-latching debounce.
-    seated_range_m: 0.03
+    # and disarms, freezing the vehicle.
+    # rev 2026-07-23: raised 0.03 -> 0.10. Below ~5 cm the markers vanish (measured 21%
+    # healthy at 0-5 cm vs 84%+ beyond; trial auto_103916), so a 3 cm seat forced the
+    # debounce to confirm from inside a vision blackout -> it never seated and crept to
+    # range 0, freezing clipped into the (collision-less) dock. 0.10 seats where vision
+    # is reliable; the 0.02 m/s surge floor means it advances <~1 cm during the debounce,
+    # so it stops well above the blackout. This is a "captured at the entry" definition,
+    # which a real funnel dock does mechanically anyway.
+    seated_range_m: 0.10
     seated_lateral_tol_m: 0.03
     seated_vertical_tol_m: 0.03
     seated_yaw_tol_rad: 0.05
@@ -41,3 +51,4 @@ fine_align:
     degraded_gain_scale: 0.5
     control_rate_hz: 20.0
     max_pose_age_s: 1.0
+    max_twist_age_s: 1.0

@@ -28,6 +28,10 @@ class HealthThresholds:
     healthy_max_age_s: float  # max seconds since last update to still be HEALTHY
     healthy_max_position_std_m: float  # max sigma on position for HEALTHY
     stale_max_age_s: float  # beyond this age, STALE regardless of everything else
+    # Beyond this position sigma, STALE regardless of age: the estimate is too uncertain
+    # to drive on (markers out of frame -> covariance blows up). Blocks the controller
+    # from creeping forward blind and clipping the dock. Default inf = disabled.
+    stale_max_position_std_m: float = float("inf")
 
 
 def classify_health(
@@ -52,6 +56,9 @@ def classify_health(
     if seconds_since_init == 0.0:
         return FilterHealth.WARMING_UP
     if seconds_since_last_update > thresholds.stale_max_age_s:
+        return FilterHealth.STALE
+    if position_std_m > thresholds.stale_max_position_std_m:
+        # Uncertainty too high (e.g. markers out of frame) -> unreliable -> block.
         return FilterHealth.STALE
     if (
         seconds_since_last_update <= thresholds.healthy_max_age_s

@@ -43,3 +43,4 @@ eeprom.bin
 
 # Claude's local files
 .claude
+bags/

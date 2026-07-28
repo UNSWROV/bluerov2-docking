@@ -17,7 +17,7 @@ The system drives the BlueROV2 onto a dock through a perception-to-control pipel
 
 | Package | Description |
 |---------|-------------|
-| `description` | Docking station Gazebo model, world file, RViz + Foxglove configs |
+| `description` | Docking station Gazebo model + sinusoidal dock-motion plugin, world file, RViz + Foxglove configs |
 | `sim` | Simulation launch file |
 | `perception` | ArUco detection, multi-marker fusion + Kalman filter, LED mock publisher |
 | `control` | Coarse approach + fine alignment PBVS controllers |
@@ -130,6 +130,10 @@ ros2 launch sim sim.launch.py use_control:=true use_joy:=true use_deadman:=true 
 ```
 
 > With `use_control:=true` the docking FSM owns the flight mode per phase (`POSHOLD` at idle, `ALT_HOLD` for coarse, `STABILIZE` for fine), so `flight_mode` only sets the *startup* mode — leave it at the `POSHOLD` default. Hold the joystick deadman button (default: RB / button 5) to engage autonomy; release to hand control back to manual `POSHOLD`.
+
+### Dock motion
+
+The docking station is not fixed: a Gazebo system plugin (`DockSway`) drives it on a prescribed sinusoidal heave/sway trajectory to emulate swell, so perception and control are exercised against a moving target. Amplitude, period, and phase are set on the `<plugin filename="DockSway">` block in `src/description/models/docking_station/model.sdf` (defaults: heave and sway of +/- 0.1 m, 4 s period). Set `<enabled>false</enabled>` there to freeze the dock for a static baseline.
 
 ### Foxglove
 

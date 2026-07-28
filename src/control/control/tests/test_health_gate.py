@@ -13,6 +13,7 @@ from control.health_gate import (
     decide_phase,
     gate_for_health,
     within_tolerances,
+    within_velocity,
 )
 
 
@@ -53,6 +54,25 @@ def test_within_tolerances_false_when_off_axis():
         range_to_standoff_m=0.05, axis_offset_m=0.30, yaw_err_rad=0.03, tol=_TOL
     )
     assert wp is False and wh is True
+
+
+def test_within_velocity_true_when_slow():
+    assert within_velocity(0.02, vel_match_m_s=0.05) is True
+
+
+def test_within_velocity_false_when_fast():
+    # sway zero-crossing: position may be in tolerance but the dock is moving fast
+    assert within_velocity(0.12, vel_match_m_s=0.05) is False
+
+
+def test_handoff_counter_decays_under_velocity_mismatch():
+    # position, yaw, health all good, but within_vel False -> cannot accumulate toward
+    # AT_STANDOFF; the debounce counter decays (2 -> 1) instead of climbing.
+    phase, ready, counter = decide_phase(
+        blocked=False, within_pos=True, within_yaw=True, healthy=True,
+        ready_counter=2, was_ready=False, tol=_TOL, within_vel=False,
+    )
+    assert phase == APPROACHING and ready is False and counter == 1
 
 
 def test_blocked_phase_overrides():

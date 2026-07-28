@@ -6,18 +6,34 @@ filtered dock pose. Publishes body-frame cmd_vel + CoarseApproachStatus.
 Fixed-rate timer always emits a command (zero when BLOCKED) so ardusub_bridge
 never re-sends a stale command."""
 
+import numpy as np
 import rclpy
-from geometry_msgs.msg import Twist, PoseStamped, PoseWithCovarianceStamped
+from geometry_msgs.msg import (
+    Twist,
+    PoseStamped,
+    PoseWithCovarianceStamped,
+    TwistWithCovarianceStamped,
+)
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from rclpy.time import Time
 from tf2_ros import Buffer, TransformListener, TransformException
 
-from control.pbvs import PbvsController, PbvsParams, approach_speed_limit
+from control.pbvs import (
+    PbvsController,
+    PbvsParams,
+    approach_speed_limit,
+    ff_authority_ramp,
+)
 from control import guidance as guidance_lib
 from control import health_gate as hg
 from interfaces.msg import FilterHealth, CoarseApproachStatus, DockingState
+
+# Low-pass on the standoff-relative speed feeding the velocity-match handoff gate. The
+# single-step derivative of even the smoothed dock pose is noisy at 20 Hz; this EMA
+# (~3-4 frame memory) plus the ready debounce keeps within_vel from chattering.
+_REL_SPEED_EMA_ALPHA = 0.3
 
 
 class CoarseApproach(Node):
@@ -60,6 +76,12 @@ class CoarseApproach(Node):
             "v_max_yaw",
             "approach_speed_slope",
             "approach_speed_floor",
+            "max_twist_age_s",
+            "ff_vel_max",
+            "ff_ramp_far_m",
+            "ff_ramp_near_m",
+            "ff_velocity_gain",
+            "vel_match_m_s",
         ):
             self.declare_parameter(name, ptype.DOUBLE)
 
@@ -69,8 +91,13 @@ class CoarseApproach(Node):
         self._ready = False
         self._latest_pose: PoseWithCovarianceStamped | None = None
         self._latest_pose_t: float | None = None
+        self._latest_twist: TwistWithCovarianceStamped | None = None
+        self._latest_twist_t: float | None = None
         self._latest_health: int | None = None
         self._latest_state: int | None = None
+        # standoff-relative velocity estimate for the handoff velocity-match gate
+        self._prev_rel_pos_body = None
+        self._rel_speed_ema: float | None = None
 
         self._tf_buffer = Buffer()
         self._tf_listener = TransformListener(self._tf_buffer, self)
@@ -91,6 +118,12 @@ class CoarseApproach(Node):
             PoseWithCovarianceStamped,
             "/perception/dock_pose_filtered",
             self._on_pose,
+            qos,
+        )
+        self.create_subscription(
+            TwistWithCovarianceStamped,
+            "/perception/dock_pose_filtered/velocity",
+            self._on_twist,
             qos,
         )
         self.create_subscription(
@@ -125,6 +158,7 @@ class CoarseApproach(Node):
             v_max_sway=g("v_max_sway"),
             v_max_heave=g("v_max_heave"),
             v_max_yaw=g("v_max_yaw"),
+            ff_vel_max=g("ff_vel_max"),
         )
 
     def _tolerances(self) -> hg.Tolerances:
@@ -135,11 +169,16 @@ class CoarseApproach(Node):
             axis_offset_m=gd("axis_offset_tol_m"),
             yaw_rad=gd("yaw_tol_rad"),
             debounce_cycles=gi("ready_debounce_cycles"),
+            vel_match_m_s=gd("vel_match_m_s"),
         )
 
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
         self._latest_pose = msg
         self._latest_pose_t = self.get_clock().now().nanoseconds * 1e-9
+
+    def _on_twist(self, msg: TwistWithCovarianceStamped) -> None:
+        self._latest_twist = msg
+        self._latest_twist_t = self.get_clock().now().nanoseconds * 1e-9
 
     def _on_health(self, msg: FilterHealth) -> None:
         self._latest_health = int(msg.status)
@@ -157,6 +196,15 @@ class CoarseApproach(Node):
         # negative age = clock jumped back (sim reset); treat as stale
         return age < 0.0 or age > max_age
 
+    def _twist_too_old(self) -> bool:
+        if self._latest_twist_t is None:
+            return True
+        age = self.get_clock().now().nanoseconds * 1e-9 - self._latest_twist_t
+        max_age = (
+            self.get_parameter("max_twist_age_s").get_parameter_value().double_value
+        )
+        return age < 0.0 or age > max_age
+
     def _publish_zero(self, phase: int) -> None:
         self._pub_cmd.publish(Twist())
         st = CoarseApproachStatus()
@@ -171,6 +219,8 @@ class CoarseApproach(Node):
         self._controller.reset()
         self._ready_counter = 0
         self._ready = False
+        self._prev_rel_pos_body = None
+        self._rel_speed_ema = None
         self._publish_zero(CoarseApproachStatus.BLOCKED)
 
     def _publish_standoff(self) -> None:
@@ -214,6 +264,8 @@ class CoarseApproach(Node):
             self._controller.reset()
             self._ready_counter = 0
             self._ready = False
+            self._prev_rel_pos_body = None
+            self._rel_speed_ema = None
             return
         if self._latest_pose is not None:
             self._publish_standoff()
@@ -277,10 +329,33 @@ class CoarseApproach(Node):
             standoff_distance_m=standoff,
         )
 
-        cmd = self._controller.step(g.rel_pos_body, g.yaw_err, self._dt)
+        gd = lambda n: self.get_parameter(n).get_parameter_value().double_value
+
+        # Dock-velocity feedforward, distance-gated. Far from the standoff the velocity
+        # estimate is noisy and the sway is second-order, so authority ramps 0 -> 1 as
+        # the ROV closes in (opposite the surge cap). Missing/stale twist -> pure
+        # feedback. Rotated world -> body with the SAME rov quaternion as the guidance.
+        if self._latest_twist is None or self._twist_too_old():
+            ff_vel_body = None
+        else:
+            lin = self._latest_twist.twist.twist.linear
+            v_body = guidance_lib.world_to_body(
+                (lin.x, lin.y, lin.z),
+                (rov.rotation.x, rov.rotation.y, rov.rotation.z, rov.rotation.w),
+            )
+            # ff_velocity_gain converts the dock's physical velocity into cmd_vel units
+            # (cmd_vel is effort-like, not a velocity servo), so the ff produces the dock
+            # velocity at the plant output instead of over-driving by the plant gain.
+            ff_scale = gd("ff_velocity_gain") * ff_authority_ramp(
+                g.range_to_standoff_m, gd("ff_ramp_far_m"), gd("ff_ramp_near_m")
+            )
+            ff_vel_body = ff_scale * v_body
+
+        cmd = self._controller.step(
+            g.rel_pos_body, g.yaw_err, self._dt, ff_vel_body=ff_vel_body
+        )
 
         # distance-gated surge cap: slows the approach as it nears the dock
-        gd = lambda n: self.get_parameter(n).get_parameter_value().double_value
         surge_cap = approach_speed_limit(
             g.range_to_dock_m,
             gd("approach_speed_slope"),
@@ -300,6 +375,26 @@ class CoarseApproach(Node):
         within_pos, within_yaw = hg.within_tolerances(
             g.range_to_standoff_m, g.axis_offset_m, g.yaw_err, tol
         )
+
+        # Velocity-match term: |d(rel_pos_body)/dt|, EMA-smoothed. Needs two samples,
+        # so the first cycle after (re)acquiring the pose cannot hand off. Guards the
+        # handoff against a sway zero-crossing where position is briefly in tolerance
+        # but the dock is moving fastest under the vehicle.
+        if self._prev_rel_pos_body is None:
+            within_vel = False
+        else:
+            inst = float(
+                np.linalg.norm(g.rel_pos_body - self._prev_rel_pos_body)
+            ) / self._dt
+            self._rel_speed_ema = (
+                inst
+                if self._rel_speed_ema is None
+                else _REL_SPEED_EMA_ALPHA * inst
+                + (1.0 - _REL_SPEED_EMA_ALPHA) * self._rel_speed_ema
+            )
+            within_vel = hg.within_velocity(self._rel_speed_ema, tol.vel_match_m_s)
+        self._prev_rel_pos_body = g.rel_pos_body
+
         phase, ready, self._ready_counter = hg.decide_phase(
             blocked=False,
             within_pos=within_pos,
@@ -308,6 +403,7 @@ class CoarseApproach(Node):
             ready_counter=self._ready_counter,
             was_ready=self._ready,
             tol=tol,
+            within_vel=within_vel,
         )
         self._ready = ready
 

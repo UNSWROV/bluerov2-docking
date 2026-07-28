@@ -39,6 +39,9 @@ def generate_launch_description():
             DeclareLaunchArgument("fsm_viewer_port", default_value="5000"),
             DeclareLaunchArgument("use_deadman", default_value="false"),
             DeclareLaunchArgument("use_joy", default_value="false"),
+            # Optional joystick pinning; see blue_sim (joy_use_dev/joy_dev).
+            DeclareLaunchArgument("joy_use_dev", default_value="false"),
+            DeclareLaunchArgument("joy_dev", default_value="/dev/input/js0"),
             DeclareLaunchArgument("use_key", default_value="false"),
             DeclareLaunchArgument("use_ardusub", default_value="true"),
             # POSHOLD at idle: holds the armed heading, so the vehicle stays put
@@ -51,6 +54,11 @@ def generate_launch_description():
             DeclareLaunchArgument("use_aruco", default_value="true"),
             DeclareLaunchArgument("use_foxglove", default_value="false"),
             DeclareLaunchArgument("use_control", default_value="false"),
+            # Filter regime, forwarded to aruco.launch.py. "sway" = CV filter + ff
+            # (method); "static" = velocity pinned, ff off (baseline). For ablation.
+            DeclareLaunchArgument("process_noise_regime", default_value="sway"),
+            # Sway-regime WNA density sigma_a; forwarded to aruco.launch.py (#36 trade study).
+            DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -61,6 +69,8 @@ def generate_launch_description():
                     "use_sim": "true",
                     "use_rviz": "false",
                     "use_joy": LaunchConfiguration("use_joy"),
+                    "joy_use_dev": LaunchConfiguration("joy_use_dev"),
+                    "joy_dev": LaunchConfiguration("joy_dev"),
                     "use_key": LaunchConfiguration("use_key"),
                     "model": "bluerov2_heavy",
                     "use_ardusub": LaunchConfiguration("use_ardusub"),
@@ -94,6 +104,21 @@ def generate_launch_description():
                 ],
                 output="screen",
             ),
+            # Ground-truth dock pose: the dock's PosePublisher emits its true world
+            # pose on the gz topic /model/docking_station/pose. Bridge it to ROS as
+            # /dock/ground_truth/pose so docking trials can score the filter estimate
+            # against ground truth (issue #36). gz -> ROS only (the sim owns the truth).
+            Node(
+                package="ros_gz_bridge",
+                executable="parameter_bridge",
+                arguments=[
+                    "/model/docking_station/pose@geometry_msgs/msg/PoseStamped[gz.msgs.Pose"
+                ],
+                remappings=[
+                    ("/model/docking_station/pose", "/dock/ground_truth/pose"),
+                ],
+                output="screen",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -110,6 +135,8 @@ def generate_launch_description():
                 ),
                 launch_arguments={
                     "target_frame": "map",
+                    "process_noise_regime": LaunchConfiguration("process_noise_regime"),
+                    "sway_sigma_a": LaunchConfiguration("sway_sigma_a"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_aruco")),
             ),

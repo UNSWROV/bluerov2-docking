@@ -26,11 +26,7 @@
     "PULSE_SERVER": "${localEnv:PULSE_SERVER}",
     "QT_X11_NO_MITSHM": "1",
     "NVIDIA_VISIBLE_DEVICES": "all",
-    "NVIDIA_DRIVER_CAPABILITIES": "all",
-    "__NV_PRIME_RENDER_OFFLOAD": "1",
-    "__NV_PRIME_RENDER_OFFLOAD_PROVIDER": "NVIDIA-G1",
-    "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
-    "__VK_LAYER_NV_optimus": "NVIDIA_only"
+    "NVIDIA_DRIVER_CAPABILITIES": "all"
   },
   "forwardPorts": [5000],
   "remoteEnv": {
@@ -72,7 +68,8 @@
         "eamodio.gitlens",
         "github.vscode-github-actions",
         "ms-vscode.cpptools",
-        "ms-vscode.cmake-tools"
+        "ms-vscode.cmake-tools",
+        "ms-vscode.cpptools-extension-pack"
       ]
     }
   }

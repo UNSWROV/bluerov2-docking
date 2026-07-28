@@ -8,6 +8,7 @@ from control.pbvs import (
     PbvsController,
     PbvsParams,
     approach_speed_limit,
+    ff_authority_ramp,
 )
 
 
@@ -42,6 +43,41 @@ def test_zero_error_gives_zero_command():
     assert cmd.sway == pytest.approx(0.0)
     assert cmd.heave == pytest.approx(0.0)
     assert cmd.yaw_rate == pytest.approx(0.0)
+
+
+def test_ff_none_is_backward_compatible():
+    err = np.array([0.5, 0.1, -0.05])
+    a = controller().step(err, yaw_err=0.02, dt=0.05)
+    b = controller().step(err, yaw_err=0.02, dt=0.05, ff_vel_body=None)
+    assert (a.surge, a.sway, a.heave, a.yaw_rate) == (
+        b.surge, b.sway, b.heave, b.yaw_rate)
+
+
+def test_ff_adds_after_feedback_clamp():
+    # zero error -> pure feedforward passes through on each linear axis
+    cmd = controller().step(
+        np.zeros(3), yaw_err=0.0, dt=0.05, ff_vel_body=np.array([0.02, 0.12, -0.08])
+    )
+    assert cmd.surge == pytest.approx(0.02)
+    assert cmd.sway == pytest.approx(0.12)
+    assert cmd.heave == pytest.approx(-0.08)
+    assert cmd.yaw_rate == 0.0  # yaw never takes feedforward
+
+
+def test_ff_clamped_by_ff_vel_max_not_v_max():
+    # a dock faster than v_max_sway (0.15) still passes up to ff_vel_max (0.25)
+    c = controller(v_max_sway=0.15, ff_vel_max=0.25)
+    cmd = c.step(np.zeros(3), yaw_err=0.0, dt=0.05, ff_vel_body=np.array([0.0, 0.40, 0.0]))
+    assert cmd.sway == pytest.approx(0.25)
+
+
+def test_feedback_keeps_full_budget_under_large_ff():
+    # dock-relative clamp: feedback saturates at v_max INDEPENDENTLY of ff, so
+    # total = v_max + clamped ff. A joint clamp would wrongly cap this at v_max.
+    c = controller(v_max_sway=0.15, ff_vel_max=0.25)
+    big_err = np.array([0.0, 1.0, 0.0])  # saturates sway feedback at 0.15
+    cmd = c.step(big_err, yaw_err=0.0, dt=0.05, ff_vel_body=np.array([0.0, 0.40, 0.0]))
+    assert cmd.sway == pytest.approx(0.15 + 0.25)
 
 
 @pytest.mark.parametrize(
@@ -149,3 +185,20 @@ def test_approach_speed_limit_ramp_floor_ceiling():
     assert approach_speed_limit(2.0, 0.2, 0.05, 0.3) == pytest.approx(0.3)  # ceiling
     assert approach_speed_limit(1.0, 0.2, 0.05, 0.3) == pytest.approx(0.2)  # linear ramp
     assert approach_speed_limit(0.1, 0.2, 0.05, 0.3) == pytest.approx(0.05)  # floor
+
+
+@pytest.mark.parametrize(
+    "range_to_standoff, expected",
+    [
+        (2.0, 0.0),   # beyond far_m -> feedforward off (noisy estimate, closing fast)
+        (1.5, 0.0),   # at far_m -> still off
+        (0.9, 0.5),   # midpoint of [near_m, far_m] -> half authority
+        (0.3, 1.0),   # at near_m -> full feedforward (sync matters here)
+        (0.0, 1.0),   # inside near_m -> clipped to full
+    ],
+)
+def test_ff_authority_ramp_grows_as_ff_closes(range_to_standoff, expected):
+    # inverted endpoints vs the speed limit: authority RISES toward the standoff
+    assert ff_authority_ramp(range_to_standoff, far_m=1.5, near_m=0.3) == pytest.approx(
+        expected
+    )

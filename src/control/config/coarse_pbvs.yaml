@@ -4,8 +4,13 @@ coarse_approach:
 
     kp_surge: 1.0
     kd_surge: 0.0      # pure-P surge: no braking needed before the standoff
-    kp_sway: 0.8
-    kd_sway: 0.0
+    # rev 2026-07-23: trial dock_trial_145038 showed the sway loop over-driving a
+    # swaying standoff (ROV amplitude 2.3x the dock, relative vel no better than
+    # stationary), which kept the velocity-match handoff gate from ever latching.
+    # Lower kp so the feedforward carries the dock motion and feedback only trims the
+    # residual; add kd (was pure-P) to brake the overshoot. Retune from the next trial.
+    kp_sway: 0.5
+    kd_sway: 0.3
     kp_heave: 2.0
     kd_heave: 0.0
     kp_yaw: 1.0
@@ -18,6 +23,26 @@ coarse_approach:
     # ceilinged at v_max_surge: slows near the dock, bounds collision speed.
     approach_speed_slope: 0.12
     approach_speed_floor: 0.05
+
+    # dock-velocity feedforward (rev 2026-07-22): sync to the swaying dock BEFORE the
+    # handoff. ff_vel_max bounds the term (dock-relative); authority ramps 0 -> 1 as
+    # range_to_standoff falls from ff_ramp_far_m to ff_ramp_near_m (noisy far, matters near).
+    ff_vel_max: 0.25
+    ff_ramp_far_m: 1.5
+    ff_ramp_near_m: 0.3
+    # rev 2026-07-23: cmd_vel is effort-like, not a velocity servo (measured plant gain
+    # v_rov/cmd ~1.3-1.6 with ~240ms lag in trial damped_sway_150515). The ff feeds a
+    # physical velocity, so it must be converted to command units or it over-drives by
+    # the plant gain (ROV swung 2.5x the dock). ~1/gain; refine from the next trial.
+    ff_velocity_gain: 0.6
+    # velocity-match handoff gate: standoff-relative speed must be under this to latch.
+    # NOTE (rev 2026-07-23): the signal is EMA of |d(rel_pos_body)/dt| off the FILTERED
+    # pose, whose measurement noise floors it near ~0.08 m/s even when the true relative
+    # velocity is ~0.02 (trial slow_sway_005334). 0.05 sat below the noise floor -> never
+    # latched (READY 0%). 0.15 clears the noise while still blocking pathological motion;
+    # at the slow 18s sway the position debounce already implies velocity match. Cleaner
+    # fix (later): gate on the filter velocity STATE minus ROV odom velocity, then tighten.
+    vel_match_m_s: 0.15
 
     target_frame: "map"
     aim_offset_in_dock: [0.0, 0.0, 0.0]
@@ -32,3 +57,4 @@ coarse_approach:
     degraded_gain_scale: 0.5
     control_rate_hz: 20.0
     max_pose_age_s: 1.0
+    max_twist_age_s: 1.0
