@@ -14,6 +14,27 @@
           </mesh>
         </geometry>
       </visual>
+      <!-- Convex decomposition (Harmonic mesh optimization): DART cannot collide a
+           dynamic concave trimesh, and the dock must stay dynamic for DockSway.
+           Decomposing the cage into convex hulls at load gives stable contact on a
+           dynamic body and never exercises the fragile ODE trimesh-trimesh path.
+           max_convex_hulls must stay high enough to preserve the entry cavity. -->
+      <collision name="collision">
+        <geometry>
+          <mesh optimization="convex_decomposition">
+            <convex_decomposition>
+              <!-- Keep the hull count low: DART's ODE detector treats each hull
+                   as a trimesh, so seated contact costs O(hulls x ROV meshes)
+                   trimesh pairs per step. 64 hulls overflowed ODE's contact
+                   hash and stalled the sim whenever the vehicle rested in the
+                   cage. Must stay high enough to keep the entry cavity open. -->
+              <max_convex_hulls>16</max_convex_hulls>
+            </convex_decomposition>
+            <uri>model://docking_station/meshes/dock_station.dae</uri>
+          </mesh>
+        </geometry>
+        <max_contacts>6</max_contacts>
+      </collision>
     </link>
 
     <!-- LED array: 4x green emissive spheres at cage front support corners.
