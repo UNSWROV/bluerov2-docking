@@ -47,13 +47,10 @@ through a sinusoidal sway and heave of amplitude 0.1~m with a 90-degree
 relative phase, producing an orbital motion representative of wave-driven
 excitation of a moored structure. The period is configurable per launch
 (18~s nominal; 6~s to 20~s in the envelope sweep) and the plugin publishes
-the true dock pose, bridged into ROS as a ground-truth channel used only for
-scoring, never by the vehicle. Mechanical capture is not modelled: the dock
-carries a demonstration-grade collision (a convex decomposition of the dock
-mesh), but the vehicle's own hull collision is not constructed by the
-physics backend, so success is instead defined at the capture envelope
-(Section~\ref{sec:method-experiment}) and would-be contacts are scored
-post hoc from ground truth.
+the true dock pose as a ground-truth channel used only for scoring, never
+by the vehicle. Mechanical capture and contact are not modelled: success
+is defined at the capture envelope (Section~\ref{sec:method-experiment})
+and would-be contacts are scored post hoc from ground truth.
 
 The swept period band and amplitude are anchored to real ocean forcing.
 Surface gravity waves occupy roughly 5 to 20~s: locally generated wind sea
@@ -150,13 +147,11 @@ throughout Part~A.
 \label{sec:method-experiment}
 
 Trials are executed by an unattended harness that launches the full stack,
-waits for the filter to initialise and the autopilot mode to settle (guarding
-a startup race in which a late mode retry could override the mission mode),
+waits for the filter to initialise and the autopilot mode to settle,
 engages the state machine, records a curated set of topics, polls for the
 docked state with a timeout, and tears the stack down between trials.
-Recording uses a low-impact mode (memory-backed storage under reduced
-scheduler priority) after measurements showed recorder load itself degrading
-the perception cadence it was capturing.
+Recording runs in a low-impact configuration after measurements showed
+recorder load itself degrading the perception cadence it was capturing.
 
 The envelope experiment sweeps filter regime (\emph{static} baseline versus
 \emph{sway} method) by dock sway period $\{20, 16, 12, 10, 8, 6\}$~s with
@@ -190,8 +185,7 @@ markers (residuals under 0.4~mm) shows the sheets were printed at 95.9\% of
 nominal scale, so the analysis uses the measured black-square sides (149.4,
 74.7, 44.4 and 35.6~mm) throughout. The fit is corroborated independently by
 the 201-to-202 baseline, which matches two butted A4 pages plus millimetres
-of tape gap only under the corrected scale. The analysis code refuses to run
-without the measured-size file, since falling back to nominal sizes would
+of tape gap only under the corrected scale; using nominal sizes would
 silently inflate every derived range by 4.1\%.
 
 \subsubsection{Capture setup}
@@ -199,7 +193,7 @@ silently inflate every derived range by 4.1\%.
 Data was captured in a single pool session with a ZED stereo camera, of
 which only the left, rectified stream was recorded (960$\times$540 at
 nominal 15~Hz), giving a monocular ArUco problem; images, camera info and
-the ZED IMU were logged to MCAP bags with zstd compression. Two runs were
+the ZED IMU were logged. Two runs were
 recorded: an on-axis walk-back (677 frames at an effective 2.5~Hz over
 271~s) and an oblique walk-back from roughly 4~m of lateral offset (737
 frames over 85~s, with about 42\% of frames dropped in bursts by disk
@@ -264,8 +258,8 @@ Higher turbidity than the pool's was synthesised by re-attenuating each
 real frame in place: $I' = B + (I - B)\,e^{-\Delta\beta\, d(x)}$ per
 channel and per pixel, with the per-pixel range $d(x)$ taken from the
 board-plane pose and $\Delta\beta = m\,\beta$ for multipliers
-$m \in \{0, 0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 8\}$; the identity at $m{=}0$
-is exact. Results are reported against total optical depth
+$m \in \{0, 0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 8\}$, where $m{=}0$ reproduces
+the real frame. Results are reported against total optical depth
 $\tau = (1{+}m)\,\beta d$ rather than named water types: range enters the
 model only as the product $\beta d$, so any uniform scale error in $d$ is
 absorbed into $\beta$, making the $\tau$ axis immune to the $\pm$10\%
@@ -275,12 +269,10 @@ shows on synthesised frames is an upper bound.
 
 \subsubsection{Detection pipeline and metrics}
 
-Detection uses OpenCV~4.10 (pinned; the ArUco module was rewritten at 4.7
-and results are not comparable across that boundary) with the new
-\texttt{ArucoDetector} API, subpixel corner refinement, and
-\texttt{adaptiveThreshConstant} lowered from the default 7 to 3 after a
-grid over $\{3, 5, 7\}$ at the highest synthesised turbidity (board-hit
-rate 0.250, 0.231, 0.144 respectively; selected without a holdout, so its
+Detection uses OpenCV~4.10 with the current \texttt{ArucoDetector} API,
+subpixel corner refinement, and \texttt{adaptiveThreshConstant} lowered
+from the default 7 to 3, the best of a grid over $\{3, 5, 7\}$ scored at
+the highest synthesised turbidity (selected without a holdout, so its
 reported rate is an optimistic bound). Single-marker pose, the quantity
 under test, uses planar PnP (IPPE square); the reference for
 self-consistency is a multi-marker board PnP computed leave-one-out, with
