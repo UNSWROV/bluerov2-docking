@@ -5,7 +5,35 @@
 % characterisation of passive-marker perception). Keep Part A / Part B parallel.
 
 \subsection{System architecture}
-% FIGURE: architecture block diagram + annotated state machine.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, >={Stealth[length=2mm]},
+  box/.style={draw, rounded corners=1pt, align=center, minimum height=8mm, inner sep=3pt}]
+  \node[box] (cam) {Camera\\(10~Hz)};
+  \node[box, right=6mm of cam] (det) {ArUco\\detection};
+  \node[box, right=6mm of det] (fus) {Spatial consensus +\\inverse-variance fusion};
+  \node[box, right=6mm of fus] (kf) {Error-state\\Kalman filter};
+  \node[box, below=10mm of kf] (guid) {Guidance\\(coarse standoff / fine align)};
+  \node[box, left=14mm of guid] (ctl) {PBVS control +\\velocity feedforward};
+  \node[box, left=14mm of ctl] (veh) {ArduSub\\+ vehicle};
+  \node[box, below=8mm of ctl, dashed] (fsm) {Supervisory FSM: \textsc{idle} / \textsc{coarse} / \textsc{fine} / \textsc{docked}};
+  \draw[->] (cam) -- (det);
+  \draw[->] (det) -- (fus);
+  \draw[->] (fus) -- (kf);
+  \draw[->] (kf) -- node[right]{\tiny pose, velocity, health} (guid);
+  \draw[->] (guid) -- node[above, yshift=1pt]{\tiny error} (ctl);
+  \draw[->] (ctl) -- node[above, yshift=1pt]{\tiny cmd\_vel} (veh);
+  \draw[dashed, ->] (veh.north) -- node[left]{\tiny camera moves with vehicle} (cam.south);
+  \draw[dashed, ->] (fsm.north) -- (ctl.south);
+  \draw[dashed, ->] (fsm.east) -| node[pos=0.35, below]{\tiny engage / handoff / demote} (guid.south);
+\end{tikzpicture}
+\caption{System architecture. Perception runs entirely in the loop; the
+supervisory state machine sequences the mission and gates the controllers
+on the filter's health signal. The feedback path from vehicle to camera is
+the ego-motion coupling analysed in Section~\ref{sec:results-a}.}
+\label{fig:arch}
+\end{figure}
 
 The system is a perception, guidance and control pipeline for the terminal stage
 of docking. Perception estimates the dock pose from passive ArUco markers and
@@ -22,12 +50,32 @@ PBVS was selected over image-based servoing because the marker pipeline already
 produces a full metric 6-DOF pose: fusing multiple markers of known geometry
 yields a calibrated dock pose, so servoing in pose space costs nothing extra
 and keeps the guidance geometry (standoff points, entry axis, capture
-tolerances) expressible in physical units. % TODO cite visual servoing tutorial
+tolerances) expressible in physical units \cite{chaumette2006visual}.
 
 The scope boundary is the optical terminal stage: trials begin with the dock
 inside the camera field of view at several metres range. Long-range
 acquisition (acoustic homing or an active light cue) is assumed to have
 delivered the vehicle to this point and is out of scope.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, >={Stealth[length=2mm]}, node distance=16mm,
+  st/.style={draw, rounded corners=3pt, align=center, minimum height=9mm, inner sep=4pt}]
+  \node[st] (idle) {\textsc{idle}\\ \tiny re-arm, hold};
+  \node[st, right=of idle] (coarse) {\textsc{coarse}\\ \tiny drive to standoff};
+  \node[st, right=of coarse] (fine) {\textsc{fine}\\ \tiny align, advance};
+  \node[st, right=of fine] (dock) {\textsc{docked}\\ \tiny disarm};
+  \draw[->] (idle) -- node[above, align=center]{\tiny engage} (coarse);
+  \draw[->] (coarse) -- node[above, align=center]{\tiny handoff gate:\\ \tiny pos + yaw tol,\\ \tiny velocity-matched,\\ \tiny debounced} (fine);
+  \draw[->] (fine) -- node[above, align=center]{\tiny seated $\leq$ 0.10 m,\\ \tiny debounced} (dock);
+  \draw[->] (fine.south) to[bend left=25] node[below, align=center]{\tiny demote: loss $>$ 2 s or range $>$ 1.5 m} (coarse.south);
+  \draw[->] (coarse.north) to[bend right=30] node[above]{\tiny disengage} (idle.north);
+  \draw[->] (dock.north) to[bend right=45] node[above]{\tiny disengage (re-arm on \textsc{idle} entry)} (idle.north);
+\end{tikzpicture}
+\caption{Docking state machine with the transition gates annotated.
+Demotion paths make perception loss recoverable rather than terminal.}
+\label{fig:fsm}
+\end{figure}
 
 \subsection{Part A: Docking simulation}
 
@@ -87,7 +135,7 @@ $r$, so distant small markers contribute less than near large ones.
 
 The fused measurement feeds a nine-state error-state Kalman filter over dock
 position, dock velocity and a small-angle rotation error carried about a
-reference quaternion. % TODO cite error-state KF template
+reference quaternion \cite{sola2017quaternion}.
 Two process-noise regimes are defined. The \emph{static} regime pins the
 velocity states (zero initial velocity uncertainty and zero velocity process
 noise), which is algebraically equivalent to a constant-position filter and
@@ -106,6 +154,28 @@ and position standard deviation under 0.04~m, and the estimate is declared
 stale when either the measurement age exceeds 3~s or the uncertainty exceeds
 a 0.15~m ceiling, so controllers hold rather than act on an unconstrained
 estimate. Downstream controllers consume only this semantic signal.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, >={Stealth[length=2mm]},
+  box/.style={draw, rounded corners=1pt, align=center, minimum height=9mm, inner sep=3pt}]
+  \node[box] (meas) {fused\\measurement};
+  \node[box, right=7mm of meas] (gate) {Mahalanobis\\gate};
+  \node[box, right=7mm of gate] (upd) {update\\ $[\,\delta p \;\; \delta v \;\; \delta\theta\,]$};
+  \node[box, right=7mm of upd] (bound) {bounds:\\ $|v| \leq 0.2$ m/s,\\ $\sigma_p$ ceiling};
+  \node[box, right=7mm of bound] (out) {pose, twist,\\health};
+  \node[box, below=7mm of upd] (pred) {predict (30 Hz)\\ \emph{static}: $v$ pinned $\;|\;$ \emph{sway}: WNA $\sigma_a$};
+  \draw[->] (meas) -- (gate);
+  \draw[->] (gate) -- (upd);
+  \draw[->] (upd) -- (bound);
+  \draw[->] (bound) -- (out);
+  \draw[->] (pred) -- (upd);
+\end{tikzpicture}
+\caption{Filter structure: the nine-state error-state filter with the two
+process-noise regimes (the Part~A ablation), the measurement gate, and
+the physically motivated state bounds.}
+\label{fig:kf}
+\end{figure}
 
 \subsubsection{Guidance and control}
 \label{sec:method-control}
@@ -142,6 +212,48 @@ command and vehicle velocity. In the static filter regime the velocity
 estimate is identically zero, so the feedforward vanishes and the system
 reduces exactly to the baseline controller; this is the ablation used
 throughout Part~A.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, >={Stealth[length=2mm]}, scale=1.15]
+  % dock cage (top view), entry faces left
+  \fill[gray!30] (8.0,-0.75) rectangle (9.6,0.75);
+  \fill[white] (8.0,-0.55) rectangle (9.4,0.55);
+  \draw[thick] (8.0,-0.75) rectangle (9.6,0.75);
+  \draw[thick] (8.0,-0.55) rectangle (9.4,0.55);
+  \node at (8.8,1.05) {dock (top view)};
+  % entry axis
+  \draw[dashed] (0.2,0) -- (8.0,0);
+  \node at (5.2,0.25) {\tiny entry axis};
+  % blackout zone
+  \fill[red!12] (7.6,-0.6) rectangle (8.0,0.6);
+  \node[red!60!black, align=center] at (6.3,-1.45) {\tiny vision blackout $<$ 0.05 m};
+  \draw[red!60!black, ->] (6.7,-1.3) -- (7.8,-0.5);
+  % entry plane + aperture
+  \draw[<->] (8.1,-0.55) -- (8.1,0.55);
+  \node[align=center] at (9.3,-1.15) {\tiny aperture\\ \tiny $\pm$0.15 m};
+  \draw[->] (9.0,-0.98) -- (8.15,-0.4);
+  % seat point
+  \draw[thick] (7.2,-0.15) -- (7.2,0.15);
+  \node[align=center] at (6.1,0.95) {\tiny seat: 0.10 m,\\ \tiny $\pm$0.03 m lateral};
+  \draw[->] (6.4,0.72) -- (7.15,0.2);
+  % standoff
+  \node at (3.4,0) {$\times$};
+  \node[align=center] at (3.4,0.55) {\tiny standoff point\\ \tiny (coarse target)};
+  % vehicle
+  \draw[fill=gray!15] (1.0,0.25) -- (2.0,0) -- (1.0,-0.25) -- cycle;
+  \node at (1.3,0) {\tiny ROV};
+  \draw[->] (2.1,0) -- (3.15,0);
+  % distance annotations
+  \draw[|<->|] (3.4,-0.9) -- (8.0,-0.9);
+  \node at (5.0,-1.1) {\tiny 1.0 m (not to scale)};
+\end{tikzpicture}
+\caption{Terminal docking geometry (top view, not to scale): the coarse
+standoff point, the fine-alignment entry axis, the 0.15~m scoring
+aperture, the 0.10~m seat criterion, and the close-range vision blackout
+that motivates seating before the blind zone.}
+\label{fig:geometry}
+\end{figure}
 
 \subsubsection{Experimental method}
 \label{sec:method-experiment}
@@ -186,7 +298,18 @@ nominal scale, so the analysis uses the measured black-square sides (149.4,
 74.7, 44.4 and 35.6~mm) throughout. The fit is corroborated independently by
 the 201-to-202 baseline, which matches two butted A4 pages plus millimetres
 of tape gap only under the corrected scale; using nominal sizes would
-silently inflate every derived range by 4.1\%.
+silently inflate every derived range by 4.1\%. The as-measured layout is
+shown in Figure~\ref{fig:board}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/board_layout.png}
+    \caption{As-measured marker layout in the board frame, positions and
+    black-square sides estimated from the data with the 0.959 print scale
+    applied. The four size groups placed at a common range are the
+    marker-size lever of the experiment.}
+    \label{fig:board}
+\end{figure}
 
 \subsubsection{Capture setup}
 
@@ -252,7 +375,8 @@ instrument-response correction $k$(apparent~px), measured at fixed range so
 it is independent of $\beta$, without which small (hence distant-looking)
 markers read up to 18\% low and the bias imitates attenuation; and
 per-marker intercepts, since the three sheets sit under different local
-lighting. % TODO cite image formation model (Jaffe-McGlamery / dehazing form)
+lighting. The underlying image formation model is the standard
+attenuation-plus-veiling form \cite{jaffe1990computer}.
 
 Higher turbidity than the pool's was synthesised by re-attenuating each
 real frame in place: $I' = B + (I - B)\,e^{-\Delta\beta\, d(x)}$ per
@@ -265,7 +389,37 @@ model only as the product $\beta d$, so any uniform scale error in $d$ is
 absorbed into $\beta$, making the $\tau$ axis immune to the $\pm$10\%
 range uncertainty and portable across waters and cameras. The synthesis
 adds no scattering blur, so any benefit a contrast-enhancing preprocessor
-shows on synthesised frames is an upper bound.
+shows on synthesised frames is an upper bound. The full chain is
+summarised in Figure~\ref{fig:turbpipe}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, >={Stealth[length=2mm]},
+  box/.style={draw, rounded corners=1pt, align=center, minimum height=9mm, inner sep=3pt}]
+  \node[box] (frame) {frame};
+  \node[box, right=6mm of frame] (warp) {canonical\\marker warp};
+  \node[box, right=6mm of warp] (patch) {black ring /\\white surround};
+  \node[box, right=6mm of patch] (contrast) {$B$-free contrast\\$(J_w{-}J_b)e^{-\beta d}$};
+  \node[box, right=6mm of contrast] (corr) {$k(\mathrm{px})$ +\\fixed effects};
+  \node[box, right=6mm of corr] (beta) {$\beta$ per\\channel};
+  \node[box, below=8mm of beta] (synth) {re-attenuate:\\$I' = B + (I{-}B)e^{-m\beta d(x)}$};
+  \node[box, left=6mm of synth] (sweep) {detection sweep\\(2551 trials $\times$ 10 levels)};
+  \node[box, left=6mm of sweep] (env) {envelope:\\rate(px, $\tau$), sizing rule};
+  \draw[->] (frame) -- (warp);
+  \draw[->] (warp) -- (patch);
+  \draw[->] (patch) -- (contrast);
+  \draw[->] (contrast) -- (corr);
+  \draw[->] (corr) -- (beta);
+  \draw[->] (beta) -- (synth);
+  \draw[->] (synth) -- (sweep);
+  \draw[->] (sweep) -- (env);
+\end{tikzpicture}
+\caption{Turbidity processing: the top row measures the water's
+attenuation from the target itself via the veiling-free contrast; the
+bottom row stresses the same real frames to higher optical depth and maps
+the detection envelope.}
+\label{fig:turbpipe}
+\end{figure}
 
 \subsubsection{Detection pipeline and metrics}
 
