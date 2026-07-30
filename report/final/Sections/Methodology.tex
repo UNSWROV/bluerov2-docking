@@ -32,6 +32,7 @@ delivered the vehicle to this point and is out of scope.
 \subsection{Part A: Docking simulation}
 
 \subsubsection{Simulation environment}
+\label{sec:method-sim}
 
 The simulation runs ROS~2 Jazzy with Gazebo (gz-sim~8, DART physics) and an
 ArduSub software-in-the-loop autopilot coupled through the ArduPilot Gazebo
@@ -53,6 +54,29 @@ mesh), but the vehicle's own hull collision is not constructed by the
 physics backend, so success is instead defined at the capture envelope
 (Section~\ref{sec:method-experiment}) and would-be contacts are scored
 post hoc from ground truth.
+
+The swept period band and amplitude are anchored to real ocean forcing.
+Surface gravity waves occupy roughly 5 to 20~s: locally generated wind sea
+at 5 to 8~s and swell from 8~s up to about 20~s
+\cite{holthuijsen2007waves}, and the long-term mean off the New South
+Wales coast, the operating context of this work, is a significant wave
+height of 1.6~m at a mean period of 8~s \cite{kinsela2024nearshore}. A
+submerged dock, moored or suspended \cite{guo2024dynamic}, is forced by
+the wave orbital motion, whose amplitude decays with depth as $e^{-kz}$
+with $k = 2\pi/L$ and deep-water wavelength
+$L = gT^2/2\pi \approx 1.56\,T^2$ \cite{holthuijsen2007waves}, so
+long-period swell penetrates far deeper than wind sea. Taking the
+water-particle orbital excursion as a proxy for the excursion of a
+compliantly moored dock, the simulated 0.1~m amplitude corresponds, in
+the mean NSW sea state, to a dock at approximately 19~m depth for the
+6~s period, 33~m at 8~s, 52~m at 10~s and beyond 200~m at 20~s;
+shallower docks see larger amplitudes, deeper docks only the long-period
+components. Sweeping 6 to 20~s at a fixed 0.1~m amplitude therefore
+isolates the period dependence while keeping every cell identifiable
+with a physically realistic sea state and operating depth (the
+deep-water decay is conservative for the longest periods at
+continental-shelf depths, where finite-depth theory retains still more
+motion).
 
 \subsubsection{Perception (simulated ArUco pipeline)}
 
