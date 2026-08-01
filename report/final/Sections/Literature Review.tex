@@ -21,32 +21,9 @@
 % IBVS vs PBVS (why PBVS suits a full pose pipeline). Behaviour-based state machines vs
 % path planners for terminal docking. Servoing onto moving / compliant docks.
 
-Visual servo control divides into image-based schemes, which regulate
-feature error directly in the image plane, and position-based schemes,
-which reconstruct a metric relative pose and regulate it in Cartesian
-space \cite{chaumette2006visual}. When the perception layer already
-produces a full 6-DOF pose from fiducial markers of known geometry
-\cite{garrido2014automatic}, position-based servoing costs nothing extra
-and keeps the docking geometry (standoff points, entry axes, capture
-tolerances) expressible in physical units, which is why it is adopted
-here.
+Visual servo control divides into image-based schemes, which regulate feature error directly in the image plane, and position-based schemes, which reconstruct a metric relative pose and regulate it in Cartesian space \cite{chaumette2006visual}. When the perception layer already produces a full 6-DOF pose from fiducial markers of known geometry \cite{garrido2014automatic}, position-based servoing costs nothing extra and keeps the docking geometry (standoff points, entry axes, capture tolerances) expressible in physical units, which is why it is adopted here.
 
-A gap emerges around dock \emph{motion}. Deployed and proposed resident
-docking stations are moored or suspended structures, and recent dynamic
-analyses show they respond measurably to wave and current forcing through
-their moorings \cite{guo2024dynamic}. Yet the docking-control literature
-overwhelmingly treats the dock as fixed, with environmental disturbance
-modelled at most as a steady current on the vehicle; the case of a dock
-whose pose oscillates at wave frequencies, and of estimating and tracking
-that motion from onboard vision alone, is comparatively unexplored.
-Tracking a moving target from a moving observer additionally raises a
-state-estimation question: a constant-velocity target model driven by
-white process noise \cite{barshalom2001estimation}, implemented here as
-an error-state Kalman filter \cite{sola2017quaternion}, assumes
-measurement errors uncorrelated with the observer's own motion, an
-assumption a vehicle-mounted camera can violate. Part~A of this work
-quantifies both the envelope of docking against a moving dock and the
-consequence of that violated assumption.
+A gap emerges around dock \emph{motion}. Deployed and proposed resident docking stations are moored or suspended structures, and recent dynamic analyses show they respond measurably to wave and current forcing through their moorings \cite{guo2024dynamic}. Yet the docking-control literature overwhelmingly treats the dock as fixed, with environmental disturbance modelled at most as a steady current on the vehicle; the case of a dock whose pose oscillates at wave frequencies, and of estimating and tracking that motion from onboard vision alone, is comparatively unexplored. Tracking a moving target from a moving observer additionally raises a state-estimation question: a constant-velocity target model driven by white process noise \cite{barshalom2001estimation}, implemented here as an error-state Kalman filter \cite{sola2017quaternion}, assumes measurement errors uncorrelated with the observer's own motion, an assumption a vehicle-mounted camera can violate. Part~A of this work quantifies both the envelope of docking against a moving dock and the consequence of that violated assumption.
 
 \subsection{Simulation of underwater vision and docking}
 % Gazebo / Webots platforms; underwater image-formation and turbidity models
