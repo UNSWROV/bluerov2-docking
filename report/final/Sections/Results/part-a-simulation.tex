@@ -1,0 +1,65 @@
+\subsection{Part A: Simulation results}
+\label{sec:results-a}
+
+\subsubsection{Perception envelope}
+
+The filter's accuracy is governed by range through the $\alpha r^2/s$ measurement noise model. With the vehicle stationary 5~m from the dock the fused noise floor is approximately 0.11~m and the filter reports \textsc{degraded} throughout; at 2.2~m the floor drops to approximately 0.02~m, the filter is \textsc{healthy} for 92\% of the run (median position standard deviation 0.018~m), and the velocity state tracks the true dock velocity with amplitude ratio 0.85 and correlation 0.89 (Figure~\ref{fig:vel-check}). At the opposite extreme, marker visibility collapses at contact range: binning fine-alignment health by ground-truth range shows 84\% to 100\% healthy beyond 5~cm of the entry but only 21\% inside it, a blackout produced by the large markers overflowing the camera field of view. This measured envelope, reliable from roughly 2.5~m down to 0.05~m, motivates both the 0.10~m seat criterion and the delegation of the final centimetres to mechanical capture.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{Figures/vel_check.png}
+    \caption{Dock velocity estimation with the vehicle stationary at 2.3~m
+    (18~s sway). The velocity state (orange) tracks the ground-truth dock
+    velocity (blue) at 0.85 amplitude with correlation 0.89.}
+    \label{fig:vel-check}
+\end{figure}
+
+\subsubsection{Docking demonstration}
+
+Against the nominal 18~s, 0.1~m orbital sway, the system docks autonomously end to end: engagement to coarse at $t{+}3$~s, handoff to fine alignment at $t{+}14$~s, seated and docked at $t{+}25$~s with no demotions, latching 7 to 8~cm from the entry and coming to rest 4~cm in front of the dock plane. This trial, and every sweep trial below, ran the full perception pipeline in the loop with no ground-truth input to the vehicle.
+
+\subsubsection{Docking envelope versus sway period}
+
+Table~\ref{tab:envelope} and Figure~\ref{fig:pdock} give the headline result of the sweep ($n{=}3$ per cell, contact-censored scoring). The baseline (static filter, no feedforward) docks in every trial at every period in the raw scoring, and cleanly down to 8~s; at 6~s, two of three trials brush the aperture boundary at low speed (0.03 to 0.06~m/s) before latching. The method (constant-velocity filter with feedforward) matches the baseline down to 12~s, degrades at 10~s (one pre-latch contact), and fails at 8~s and 6~s; its single raw success at 8~s was contact-assisted.
+
+\begin{table}[H]
+\centering
+\caption{P(dock) by sway period and scoring, $n{=}3$ per cell. Clean
+excludes trials with a pre-latch off-aperture crossing.}
+\label{tab:envelope}
+\begin{tabular}{c|cc|cc}
+ & \multicolumn{2}{c|}{Baseline (ff off)} & \multicolumn{2}{c}{Method (CV + ff)} \\
+Period [s] & raw & clean & raw & clean \\
+\hline
+20 & 1.00 & 1.00 & 1.00 & 1.00 \\
+16 & 1.00 & 1.00 & 1.00 & 1.00 \\
+12 & 1.00 & 1.00 & 1.00 & 1.00 \\
+10 & 1.00 & 1.00 & 1.00 & 0.67 \\
+8  & 1.00 & 1.00 & 0.33 & 0.00 \\
+6  & 1.00 & 0.33 & 0.00 & 0.00 \\
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{Figures/clean_pdock.png}
+    \caption{Docking success versus sway period under raw (dotted) and
+    contact-censored clean (solid) scoring.}
+    \label{fig:pdock}
+\end{figure}
+
+In the operational terms of Section~\ref{sec:method-sim}, each period cell maps to a sea state and dock depth. The mean NSW sea (8~s period, 1.6~m significant height) forces a 0.1~m sway on a dock near 33~m depth, which the baseline handles cleanly; the 6~s wind-sea cell corresponds to a shallow dock near 19~m in the same sea, where the baseline still docks in every trial under raw scoring; and the longer-period cells correspond to deeper moorings reached only by swell, where both configurations succeed. The measured envelope therefore covers moored docks across typical continental-shelf operating depths, with residual risk concentrated in shallow, short-period deployments, and the method's cliff at 8 to 10~s sits at the region's mean wave period, which is precisely why the baseline's structural immunity matters operationally.
+
+Clean insertions cross the entry plane 0.003 to 0.05~m off axis at 0.06 to 0.11~m/s closing speed, and all observed contacts occur below 0.06~m/s. These figures form the interface requirement for a capture mechanism: a funnel with a capture radius of at least 0.15~m and tolerance for approximately 0.1~m/s closing speed captures everything the baseline delivers down to 8~s periods.
+
+\subsubsection{Failure analysis: ego-motion instability of the velocity estimator}
+
+The method's fast-period failures trace to a single mechanism. The dock measurement is reconstructed in the world frame through the transform of a moving camera, so a fraction of the vehicle's own motion leaks into the measured dock position. This leakage is \emph{correlated with the vehicle state}, violating the filter's white-noise assumption. The static filter, with no velocity state, absorbs it as position noise and remains faithful (estimated sway amplitude 0.7 to 0.9 times truth in all baseline runs). The constant-velocity filter integrates it into a phantom dock velocity and extrapolates: estimated amplitude reaches 2.4 to 5 times truth in successful method runs and 18 to 52 times truth in the failures, where the estimate has decoupled from the real dock (correlation 0.00 with the true dock while the estimate's excess motion correlates at 0.88 with the vehicle's own position). The feedforward closes the loop by injecting the phantom velocity directly into the command; with the identified plant lag of approximately 240~ms, the loop gain crosses unity between the 10~s and 8~s periods, which is where the measured cliff sits.
+
+The failure is self-concealing: every alignment signal the system exposes is computed against its own estimate, and in the failed trials those signals read seat-tolerance alignment (lateral errors of 0.000 to 0.017~m) while ground truth shows the vehicle 0.17 to 0.48~m off axis at the dock plane. Only the ground-truth channel exposes the divergence, an argument for independent verification in any real deployment.
+
+Three progressively stronger mitigations were evaluated. Bounding the velocity state at the physical dock speed and adding the covariance ceiling eliminated the metre-scale runaway and the resulting collisions, but did not restore fast-period docking. Sweeping the process noise density $\sigma_a$ over 0.02 to 0.16~m/s$^2$ found no stable setting: estimated amplitude remained 5 to 37 times truth at every value with no monotonic trend, because a smaller gain also makes the filter slower to shed an acquired phantom velocity. The baseline's immunity is structural rather than a tuning point: its velocity gain is exactly zero, and no finite gain interpolates to that property while the measurement error remains correlated with vehicle motion. The conclusion is that dock velocity feedforward from a world-frame constant-velocity estimator requires explicit ego-motion compensation, by fusing vehicle odometry into the filter or estimating in a vehicle-relative frame, identified as future work.
+
+\subsubsection{Replication}
+
+The sweep was run in full on two hosts (real-time factors 0.6 and 1.0) and two filter revisions (before and after the velocity bounds). The baseline's uniform success and the method's cliff between 10~s and 8~s reproduced in both, indicating the result reflects the estimator design rather than compute load, hardware or incidental tuning.
