@@ -1,56 +1,29 @@
 \subsection{System architecture}
 
 \begin{figure}[H]
-\centering
-\begin{tikzpicture}[font=\scriptsize, >={Stealth[length=2mm]},
-  box/.style={draw, rounded corners=1pt, align=center, minimum height=8mm, inner sep=3pt}]
-  \node[box] (cam) {Camera\\(10~Hz)};
-  \node[box, right=6mm of cam] (det) {ArUco\\detection};
-  \node[box, right=6mm of det] (fus) {Spatial consensus +\\inverse-variance fusion};
-  \node[box, right=6mm of fus] (kf) {Error-state\\Kalman filter};
-  \node[box, below=10mm of kf] (guid) {Guidance\\(coarse standoff / fine align)};
-  \node[box, left=14mm of guid] (ctl) {PBVS control +\\velocity feedforward};
-  \node[box, left=14mm of ctl] (veh) {ArduSub\\+ vehicle};
-  \node[box, below=8mm of ctl, dashed] (fsm) {Supervisory FSM: \textsc{idle} / \textsc{coarse} / \textsc{fine} / \textsc{docked}};
-  \draw[->] (cam) -- (det);
-  \draw[->] (det) -- (fus);
-  \draw[->] (fus) -- (kf);
-  \draw[->] (kf) -- node[right]{\tiny pose, velocity, health} (guid);
-  \draw[->] (guid) -- node[above, yshift=1pt]{\tiny error} (ctl);
-  \draw[->] (ctl) -- node[above, yshift=1pt]{\tiny cmd\_vel} (veh);
-  \draw[dashed, ->] (veh.north) -- node[left]{\tiny camera moves with vehicle} (cam.south);
-  \draw[dashed, ->] (fsm.north) -- (ctl.south);
-  \draw[dashed, ->] (fsm.east) -| node[pos=0.35, below]{\tiny engage / handoff / demote} (guid.south);
-\end{tikzpicture}
-\caption{System architecture. Perception runs entirely in the loop; the
-supervisory state machine sequences the mission and gates the controllers
-on the filter's health signal. The feedback path from vehicle to camera is
-the ego-motion coupling analysed in Section~\ref{sec:results-a}.}
-\label{fig:arch}
+  \centering
+  \input{Figures/tikz/architecture}
+  \caption{System architecture. The state machine gates the controllers on the
+    filter's health signal; the vehicle-to-camera feedback path is the
+    ego-motion coupling analysed in Section~\ref{sec:results-a}.}
+  \label{fig:arch}
 \end{figure}
 
-The system is a perception, guidance and control pipeline for the terminal stage of docking. Perception estimates the dock pose from passive ArUco markers and publishes a filtered pose, a dock velocity estimate, and a semantic health signal. Guidance converts the dock pose and the vehicle pose into a body-frame error to a target point. Control regulates that error with position-based visual servoing (PBVS) and writes a body velocity command. A supervisory state machine sequences the mission through \textsc{idle}, \textsc{coarse} (drive to a standoff point on the dock entry axis), \textsc{fine} (align and advance into the entry) and \textsc{docked}, with demotion paths on loss of the perception signal.
+The system includes a perception, guidance and control sub-pipeline for the terminal stage of docking. Perception estimates the dock pose from the ArUco markers on the dock and publishes a filtered pose, a dock velocity estimate, and a sematic health signal. Guidance converts the dock pose and the vehicle pose into a body frame error to a target. Control regulates that error with position-based visual servo-ing (PBVS) and writes a body velocity command. A supervisory state machine sequences the mission through 4 states (with demotion paths from loss of perception):
 
-PBVS was selected over image-based servoing because the marker pipeline already produces a full metric 6-DOF pose: fusing multiple markers of known geometry yields a calibrated dock pose, so servoing in pose space costs nothing extra and keeps the guidance geometry (standoff points, entry axis, capture tolerances) expressible in physical units \cite{chaumette2006visual}.
-
-The scope boundary is the optical terminal stage: trials begin with the dock inside the camera field of view at several metres range. Long-range acquisition (acoustic homing or an active light cue) is assumed to have delivered the vehicle to this point and is out of scope.
+\begin{enumerate}
+  \item \textsc{IDLE}: vehicle not active or on hold.
+  \item \textsc{COARSE}: vehicle drive to a standoff point on the dock entry axis.
+  \item \textsc{FINE}: vehicle fine aligns with the dock centre pose and advance into entry.
+\end{enumerate}
 
 \begin{figure}[H]
-\centering
-\begin{tikzpicture}[font=\scriptsize, >={Stealth[length=2mm]}, node distance=16mm,
-  st/.style={draw, rounded corners=3pt, align=center, minimum height=9mm, inner sep=4pt}]
-  \node[st] (idle) {\textsc{idle}\\ \tiny re-arm, hold};
-  \node[st, right=of idle] (coarse) {\textsc{coarse}\\ \tiny drive to standoff};
-  \node[st, right=of coarse] (fine) {\textsc{fine}\\ \tiny align, advance};
-  \node[st, right=of fine] (dock) {\textsc{docked}\\ \tiny disarm};
-  \draw[->] (idle) -- node[above, align=center]{\tiny engage} (coarse);
-  \draw[->] (coarse) -- node[above, align=center]{\tiny handoff gate:\\ \tiny pos + yaw tol,\\ \tiny velocity-matched,\\ \tiny debounced} (fine);
-  \draw[->] (fine) -- node[above, align=center]{\tiny seated $\leq$ 0.10 m,\\ \tiny debounced} (dock);
-  \draw[->] (fine.south) to[bend left=25] node[below, align=center]{\tiny demote: loss $>$ 2 s or range $>$ 1.5 m} (coarse.south);
-  \draw[->] (coarse.north) to[bend right=30] node[above]{\tiny disengage} (idle.north);
-  \draw[->] (dock.north) to[bend right=45] node[above]{\tiny disengage (re-arm on \textsc{idle} entry)} (idle.north);
-\end{tikzpicture}
-\caption{Docking state machine with the transition gates annotated.
-Demotion paths make perception loss recoverable rather than terminal.}
-\label{fig:fsm}
+  \centering
+  \input{Figures/tikz/fsm}
+  \caption{Docking state machine with the transition gates annotated.}
+  \label{fig:fsm}
 \end{figure}
+
+Position based servo-ing was selected over image-based servo-ing because the marker pipeline already produces a full 6-DOF pose by fusing multiple markers of known geometry and relative positions yields a calibrated dock pose, so servo-ing in pose space costs nothing extra.
+
+The scope boundary is the optical terminal stage, meaning the trails begin with the dock inside the camera field of view at serval metres range. Long-range acquisition (acoustic homing or an active light cue) is assumed to have guided the vehicle closer to this point and is out of scope.

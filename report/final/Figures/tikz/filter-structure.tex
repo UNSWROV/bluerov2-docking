@@ -1,0 +1,14 @@
+\begin{tikzpicture}[font=\scriptsize, >={Stealth[length=2mm]},
+  box/.style={draw, rounded corners=1pt, align=center, minimum height=9mm, inner sep=3pt}]
+  \node[box] (meas) {fused\\measurement};
+  \node[box, right=7mm of meas] (gate) {Mahalanobis\\gate};
+  \node[box, right=7mm of gate] (upd) {update\\ $[\,\delta p \;\; \delta v \;\; \delta\theta\,]$};
+  \node[box, right=7mm of upd] (bound) {bounds:\\ $|v| \leq 0.2$ m/s,\\ $\sigma_p$ ceiling};
+  \node[box, right=7mm of bound] (out) {pose, twist,\\health};
+  \node[box, below=7mm of upd] (pred) {predict (30 Hz)\\ \emph{static}: $v$ pinned $\;|\;$ \emph{sway}: WNA $\sigma_a$};
+  \draw[->] (meas) -- (gate);
+  \draw[->] (gate) -- (upd);
+  \draw[->] (upd) -- (bound);
+  \draw[->] (bound) -- (out);
+  \draw[->] (pred) -- (upd);
+\end{tikzpicture}

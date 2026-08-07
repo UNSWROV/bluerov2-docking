@@ -1,36 +1,14 @@
 \section{Literature Review}
+\label{sec:literature-review}
 
 % Target ~12-15 pages (be concise; significant info, not all info). Thematic, not
 % chronological. End by making the research gap explicit -> sets up your contribution.
 
-\subsection{Underwater docking: motivation and phases}
-% Why dock; mission benefits. Homing vs terminal phases. Multi-modal solutions
-% (acoustic/EM/optical) and where vision fits. Position this work as the terminal stage.
-
-\subsection{Acoustic and electromagnetic guidance}
-% Brief: USBL/acoustic transponders, EM homing -- long-range, costly, lower terminal
-% accuracy. Motivates vision for the close-range precision phase.
-
-\subsection{Vision-based docking and fiducial markers}
-% ArUco / AprilTag / ARToolKit. Passive vs active markers; active typically preferred
-% underwater (scattering/absorption). Detection challenges: turbidity, attenuation,
-% range limits, viewing angle. Key refs: dos Santos Cesar et al. (turbidity eval);
-% resident-vehicle docking (5x5 grid study); adaptive/active-marker work.
-
-\subsection{Visual servoing and guidance for docking}
-% IBVS vs PBVS (why PBVS suits a full pose pipeline). Behaviour-based state machines vs
-% path planners for terminal docking. Servoing onto moving / compliant docks.
-
-Visual servo control divides into image-based schemes, which regulate feature error directly in the image plane, and position-based schemes, which reconstruct a metric relative pose and regulate it in Cartesian space \cite{chaumette2006visual}. When the perception layer already produces a full 6-DOF pose from fiducial markers of known geometry \cite{garrido2014automatic}, position-based servoing costs nothing extra and keeps the docking geometry (standoff points, entry axes, capture tolerances) expressible in physical units, which is why it is adopted here.
-
-A gap emerges around dock \emph{motion}. Deployed and proposed resident docking stations are moored or suspended structures, and recent dynamic analyses show they respond measurably to wave and current forcing through their moorings \cite{guo2024dynamic}. Yet the docking-control literature overwhelmingly treats the dock as fixed, with environmental disturbance modelled at most as a steady current on the vehicle; the case of a dock whose pose oscillates at wave frequencies, and of estimating and tracking that motion from onboard vision alone, is comparatively unexplored. Tracking a moving target from a moving observer additionally raises a state-estimation question: a constant-velocity target model driven by white process noise \cite{barshalom2001estimation}, implemented here as an error-state Kalman filter \cite{sola2017quaternion}, assumes measurement errors uncorrelated with the observer's own motion, an assumption a vehicle-mounted camera can violate. Part~A of this work quantifies both the envelope of docking against a moving dock and the consequence of that violated assumption.
-
-\subsection{Simulation of underwater vision and docking}
-% Gazebo / Webots platforms; underwater image-formation and turbidity models
-% (Jaffe-McGlamery; Akkaynak-Treibitz revised model / Sea-thru). What sim can and
-% cannot capture (optics not modelled in stock Gazebo).
-
-\subsection{Research gap}
-% Synthesise: the detection algorithm is mature, but the operating ENVELOPE of a
-% PASSIVE-marker dock on a low-cost ROV tier is not quantified, and synthetic-turbidity
-% validation on real captures is underused. This is what the thesis measures.
+\input{Sections/Literature/docking-overview}
+\input{Sections/Literature/acoustic-em}
+\input{Sections/Literature/dock-motion}
+\input{Sections/Literature/vision-fiducial}
+\input{Sections/Literature/visual-servoing}
+\input{Sections/Literature/state-estimation}
+\input{Sections/Literature/image-formation}
+\input{Sections/Literature/research-gap}

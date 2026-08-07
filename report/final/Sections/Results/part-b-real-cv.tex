@@ -3,26 +3,27 @@
 
 \subsubsection{Detection rate versus marker size and range}
 
-Detection is governed by apparent size in pixels with a sharp floor. Across all four size groups the rate is zero below 21~px, transitional in the 21 to 28~px bin (0.21 to 0.59 depending on size), and above 0.85 from 38~px upward (Figure~\ref{fig:det-px}). On the derived metric axis this maps to overall on-axis rates of 0.93 for the 149.4~mm markers, 0.61 at 74.7~mm, 0.43 at 44.4~mm and 0.29 at 35.6~mm over the swept range. The oblique run (median incidence 58$^\circ$) detected only the 149.4~mm markers, at 0.60 overall; the three smaller groups produced zero detections in 791 trials, indicating that oblique viewing costs roughly one size class even before the angle reaches the detector's geometric limits.
+Detection is governed by apparent size in pixels with a sharp floor. Across all four size groups the rate is zero below 21~px, transitional in the 21 to 28~px bin (0.21 to 0.59 depending on size), and above 0.85 from 38~px upward (Figure~\ref{fig:det-px}); the $\sim$27~px 50\% budget measured independently in Section~\ref{sec:results-turbidity} crosses each group's curve near its 0.5 point. On the derived metric axis this maps to overall on-axis rates of 0.93 for the 149.4~mm markers, 0.61 at 74.7~mm, 0.43 at 44.4~mm and 0.29 at 35.6~mm over the swept range. The oblique run (median incidence 58$^\circ$) detected only the 149.4~mm markers, at 0.60 overall; the three smaller groups produced zero detections in 791 trials, indicating that oblique viewing costs roughly one size class even before the angle reaches the detector's geometric limits.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{Figures/detection_rate_vs_px.png}
-    \caption{Detection rate versus apparent marker size (pixels), per
-    marker size group, with Wilson 95\% intervals; bins with fewer than
-    ten trials suppressed. The axis is calibration-free.}
+    \caption{Detection rate versus apparent marker size per size group, with
+        Wilson 95\% intervals; bins with fewer than ten trials suppressed.
+        The vertical line is the $\sim$27~px 50\% budget
+        (Section~\ref{sec:results-turbidity}).}
     \label{fig:det-px}
 \end{figure}
 
 \subsubsection{Maximum detection range}
 
-Uncensored maximum detection ranges scale linearly with marker side: 5.10 and 4.87~m for the two 149.4~mm markers, 3.05~m at 74.7~mm, 1.55 to 2.17~m at 44.4~mm, and 1.10 to 1.14~m at 35.6~mm, fitted by $\mathrm{max\ range} \approx 34.9 \times \mathrm{side}$ (Figure~\ref{fig:max-range}). The walk-back continued approximately 3~m past the last detection with none recorded, so these are genuine detection limits. Two distinctions matter operationally. First, only the largest markers reach the 5~m acquisition range assumed for the coarse phase, and only marginally. Second, maximum range is a single-tail-detection statistic; the \emph{reliable} (50\%) range sits lower, at 5~m a 149.4~mm marker subtends 23.8~px, below the $\sim$27~px needed for 50\% detection (Section~\ref{sec:results-turbidity}), which is why its maximum range of 5.1~m coexists with a 50\% range nearer 4.3~m. Only the second number sizes a dock.
+Uncensored maximum detection ranges scale linearly with marker side: 5.10 and 4.87~m for the two 149.4~mm markers, 3.05~m at 74.7~mm, 1.55 to 2.17~m at 44.4~mm, and 1.10 to 1.14~m at 35.6~mm, fitted by $\mathrm{max\ range} \approx 34.9 \times \mathrm{side}$ (Figure~\ref{fig:max-range}). The walk-back continued approximately 3~m past the last detection with none recorded, so these are genuine detection limits. Two distinctions matter operationally. First, only the largest markers reach the 5~m acquisition range assumed for the coarse phase, and only marginally. Second, maximum range is a single-tail-detection statistic; the \emph{reliable} (50\%) range sits lower, at 5~m a 149.4~mm marker subtends 23.8~px, below the $\sim$27~px needed for 50\% detection (Section~\ref{sec:results-turbidity}), which is why its maximum range of 5.1~m coexists with a 50\% range nearer 4.3~m. Only the second number sizes a dock. The law also validates the size assignment of the dock layout (Section~\ref{sec:method-layout}): the largest markers alone carry long-range acquisition, while the interior small markers need only the close-range band they were placed for.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.8\textwidth]{Figures/max_range_vs_size.png}
     \caption{Maximum detection range versus marker side with the fitted
-    linear law and the 5~m coarse-acquisition reference line.}
+        linear law and the 5~m coarse-acquisition reference line.}
     \label{fig:max-range}
 \end{figure}
 
@@ -38,45 +39,44 @@ The B-free contrast fit yields, with instrument correction and per-marker interc
     \centering
     \includegraphics[width=0.8\textwidth]{Figures/beta_contrast_decay.png}
     \caption{Instrument-corrected black-to-white contrast versus range
-    with the fixed-effects exponential fits per channel.}
+        with the fixed-effects exponential fits per channel.}
     \label{fig:beta}
 \end{figure}
 
 \subsubsection{Turbidity envelope and marker sizing}
 \label{sec:results-turbidity}
 
-Re-attenuating all 2551 on-axis trials at ten turbidity multipliers (a fixed denominator at every level) maps the detection envelope over apparent size and total optical depth (Figure~\ref{fig:surface}). The envelope has two regimes: below $\tau \approx 2$ the boundary is vertical, detection is \emph{pixel-limited} and turbidity hardly moves it; above $\tau \approx 2.3$ the boundary is horizontal, detection collapses at every apparent size sampled, \emph{turbidity-limited}. The pixel budget quantifies the first regime: the apparent size needed for 50\% detection is 27.3 to 28.1~px, flat across a sevenfold span of optical depth ($\tau$ 0.18 to 1.30), rising only within the resolution of the binning before the collapse (Figure~\ref{fig:pxbudget}). Two conclusions follow: the textbook budget of $3(n{+}2) = 21$~px for a 5$\times$5 marker underestimates the real requirement by about 30\%, because it is a pure sampling argument that assumes air; and ArUco's adaptive thresholding makes detection remarkably insensitive to contrast loss until an abrupt threshold near $\tau \approx 2$, a cliff, not a gradient.
+Re-attenuating all 2551 on-axis trials at ten turbidity multipliers (a fixed denominator at every level) maps the detection envelope over apparent size and total optical depth (Figure~\ref{fig:surface}). The envelope has two regimes: below $\tau \approx 2$ the boundary is vertical, detection is \emph{pixel-limited} and turbidity hardly moves it; above $\tau \approx 2.3$ the boundary is horizontal, detection collapses at every apparent size sampled, \emph{turbidity-limited}. The pixel budget quantifies the first regime: the apparent size needed for 50\% detection is 27.3 to 28.1~px, flat across a sevenfold span of optical depth ($\tau$ 0.18 to 1.30), rising only within the resolution of the binning before the collapse (Figure~\ref{fig:pxbudget}). The conclusion is that ArUco's adaptive thresholding makes detection remarkably insensitive to contrast loss until an abrupt threshold near $\tau \approx 2$, a cliff, not a gradient. Apparent size and turbidity are the same pair of governing variables identified by the tank evaluation of dos Santos Cesar et al.\ \cite{cesar2015evaluation}, which reported the smallest detectable size growing with turbidity at six discrete levels; the $\tau$-resolved envelope here refines that picture into a flat pixel-limited regime followed by an abrupt collapse.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.9\textwidth]{Figures/rate_px_tau_surface.png}
-    \caption{Detection rate over apparent size and total optical depth.
-    The boundary is vertical (pixel-limited) below $\tau \approx 2$ and
-    horizontal (turbidity-limited) above. White cells are physically
-    unreachable combinations.}
+    \caption{Detection rate over apparent size and total optical depth;
+        white cells are unreachable combinations.}
     \label{fig:surface}
 \end{figure}
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.8\textwidth]{Figures/px_required_vs_tau.png}
-    \caption{Apparent size required for 50\% detection versus optical
-    depth: flat at $\sim$27~px across $\tau$ 0.18 to 1.30 (band shows the
-    bin-interpolation resolution), undefined above $\tau \approx 2$ where
-    no size sampled reaches 50\%.}
+    \includegraphics[width=0.6\textwidth]{Figures/px_required_vs_tau.png}
+    \caption{Apparent size required for 50\% detection versus total optical
+        depth: flat at $\sim$27~px up to $\tau = 1.3$. Above $\tau = 2$
+        (dotted line, shaded region) no measured size reaches 50\%. The grey
+        band is the single pixel-bin interval (24.5 to 33.0~px) within which
+        the crossing is interpolated, so no trend narrower than the band is
+        resolvable.}
     \label{fig:pxbudget}
 \end{figure}
 
-Inverting the pixel budget through the pinhole model sizes the dock marker: for 50\% single-frame detection this pool's water requires a 105~mm marker at 3~m and 182~mm (interval 154 to 207~mm) at 5~m. In clearer water ($\beta = 0.15$~m$^{-1}$) the 5~m requirement barely drops (174~mm), confirming that below the cliff the requirement is set by pixels, not water; in murkier water ($\beta \geq 0.6$~m$^{-1}$, $\tau \geq 1.8$ at 3~m) the requirement is undefined within the measured envelope, no marker size sampled achieves 50\%. The textbook 21~px budget would have specified 132~mm at 5~m, 38\% short in side length and roughly half the area. The synthesised degradation is illustrated in Figure~\ref{fig:strip}; a forward-scatter check found no measurable edge blurring within apparent-size bins across the synthesised range (slopes scatter around zero), so at these optical depths contrast loss, not blur, is the operative mechanism.
+Inverting the pixel budget through the pinhole model sizes the dock marker: for 50\% single-frame detection this pool's water requires a 105~mm marker at 3~m and 182~mm (interval 154 to 207~mm) at 5~m. In clearer water ($\beta = 0.15$~m$^{-1}$) the 5~m requirement barely drops (174~mm), confirming that below the cliff the requirement is set by pixels, not water; in murkier water ($\beta \geq 0.6$~m$^{-1}$, $\tau \geq 1.8$ at 3~m) the requirement is undefined within the measured envelope, no marker size sampled achieves 50\%. The synthesised degradation is illustrated in Figure~\ref{fig:strip}; a forward-scatter check found no measurable edge blurring within apparent-size bins across the synthesised range (slopes scatter around zero), so at these optical depths contrast loss, not blur, is the operative mechanism.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{Figures/synthesis_sweep_strip.png}
-    \caption{One frame re-attenuated at increasing turbidity multipliers
-    with detections outlined: 7 of 9 markers at the real condition
-    falling to 0 of 9 at the highest multiplier. The highest-multiplier
-    panel is a diagnostic of the synthesis (its DC term is unphysical),
-    not a depiction of real murky water.}
+    \caption{One frame re-attenuated at increasing turbidity multipliers,
+        detections outlined: 7 of 9 markers at the real condition, 0 of 9 at
+        the highest multiplier. The highest multipliers are diagnostic only;
+        their DC term is unphysical.}
     \label{fig:strip}
 \end{figure}
 
@@ -86,11 +86,11 @@ CLAHE was evaluated against the detector's own thresholding knob over all 2551 t
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\textwidth]{Figures/preprocessing_eval.png}
+    \includegraphics[width=0.6\textwidth]{Figures/preprocessing_eval.png}
     \caption{Detection rate (top) and misidentifications per frame
-    (bottom) versus total optical depth for no preprocessing, CLAHE, and
-    a lowered adaptive-threshold constant. Real water ends at the dashed
-    line; everything beyond is synthesised.}
+        (bottom) versus total optical depth for no preprocessing, CLAHE, and
+        a lowered adaptive-threshold constant. Real water ends at the dashed
+        line; everything beyond is synthesised.}
     \label{fig:preproc}
 \end{figure}
 
