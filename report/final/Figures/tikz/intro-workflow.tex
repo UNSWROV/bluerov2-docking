@@ -1,0 +1,38 @@
+\begin{tikzpicture}[font=\scriptsize, >={Stealth[length=2mm]},
+  blk/.style={draw, rounded corners=2pt, align=center, inner sep=3pt, minimum height=6.5mm, minimum width=34mm},
+  sumbox/.style={draw, rounded corners=2pt, align=center, inner sep=3pt, minimum height=6.5mm, minimum width=34mm, fill=black!6},
+  lbl/.style={font=\scriptsize\bfseries, anchor=west}]
+
+  % Part A column (closed-loop simulation)
+  \node[blk] (a1) {swaying dock\\ \tiny Gazebo, wave-band periods};
+  \node[blk, below=4.5mm of a1] (a2) {onboard camera};
+  \node[blk, below=4.5mm of a2] (a3) {perception\\ \tiny marker fusion + Kalman filter};
+  \node[blk, below=4.5mm of a3] (a4) {guidance and control\\ \tiny PBVS, coarse-to-fine state machine};
+  \node[blk, below=4.5mm of a4] (a5) {vehicle motion};
+  \draw[->] (a1) -- (a2);
+  \draw[->] (a2) -- (a3);
+  \draw[->] (a3) -- (a4);
+  \draw[->] (a4) -- (a5);
+  \draw[->] (a5.west) to[bend left=40] node[left, align=center]{\tiny moving\\ \tiny camera} (a2.west);
+
+  % Part B column (real-water sensing, open loop)
+  \node[blk, right=24mm of a1] (b1) {marker board in pool water\\ \tiny hand-held walk-backs};
+  \node[blk, below=4.5mm of b1] (b2) {ArUco detection\\ \tiny scored per marker and frame};
+  \node[blk, below=4.5mm of b2] (b3) {envelope measurements\\ \tiny detection vs apparent size, max\\ \tiny range, attenuation coefficient};
+  \node[blk, below=4.5mm of b3] (b4) {synthetic turbidity stress\\ \tiny re-attenuate the same frames};
+  \draw[->] (b1) -- (b2);
+  \draw[->] (b2) -- (b3);
+  \draw[->] (b3) -- (b4);
+
+  % group boxes
+  \node[draw, dashed, rounded corners=3pt, inner sep=3mm, fit=(a1)(a5)] (boxA) {};
+  \node[draw, dashed, rounded corners=3pt, inner sep=3mm, fit=(b1)(b4)] (boxB) {};
+  \node[lbl, anchor=south west] at (boxA.north west) {A: docking dynamics (sim)};
+  \node[lbl, anchor=south west] at (boxB.north west) {B: sensing envelope (real water)};
+
+  % synthesis
+  \node[sumbox, below=8mm of $(boxA.south)!0.5!(boxB.south)$, minimum width=62mm]
+  (syn) {operating envelope and dock design rules\\ \tiny sway-period limit, capture-interface numbers, pixel budget, marker sizing};
+  \draw[->] (boxA.south) -- (syn.north -| boxA.south);
+  \draw[->] (boxB.south) -- (syn.north -| boxB.south);
+\end{tikzpicture}

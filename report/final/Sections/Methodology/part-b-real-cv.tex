@@ -1,0 +1,51 @@
+\subsection{Part B: Real-CV validation}
+\label{sec:method-partb}
+
+\subsubsection{Marker target and its as-printed geometry}
+
+The target uses the original ArUco dictionary (5$\times$5 payload) with the dock's marker set, which has two 155.64~mm markers (IDs 201, 202), one 77.82~mm (301), four 46.69~mm (302 to 305) and two 36.96~mm (401, 402), printed across three A4 waterproof labels taped to a Corflute panel. Note that the sheets were printed at 95.9\% of nominal scale, so the analysis uses the measured black-square sides (149.4, 74.7, 44.4 and 35.6~mm) throughout. This correction only affects the metric quantities since the marker size anchors the scale of the reconstruction, so the nominal sizes would overstate every derived range by 4.1\%. The results of Part~B are unaffected, since the pixel budget is measured against the apparent marker size in pixels, which does not depend on the printed size. The as-measured layout is shown in Figure~\ref{fig:board}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{Figures/board_layout.png}
+    \caption{As-measured marker layout in the board frame, with positions and
+        black-square sides estimated from the data at the 0.959 print scale.}
+    \label{fig:board}
+\end{figure}
+
+\subsubsection{Capture setup}
+
+Data was captured in a single pool session (at UNSW Fitness \& Aquatic Centre) with a ZED stereo camera mount on the BlueROV2, which only the left lens was used to record (960$\times$540 at 15~Hz). The ZED was used in place of the BlueROV2's built-in camera because it has already been calibrated for underwater use in prior work within the project group, while the built-in camera had never been calibrated.
+
+\begin{figure}[H]
+    \centering
+    \input{Figures/tikz/rov_zed_camera_annotate}
+    \caption{Capture platform, the BlueROV2 with the ZED stereo camera
+        mounted for the pool session. Only the left lens was recorded.}
+    \label{fig:rov-zed}
+\end{figure}
+
+Camera intrinsics are the shipped in-air factory rectification ($f_x{=}f_y{=}797.5$, zero distortion on the rectified stream). Whether an in-air calibration remains valid underwater is not obvious, since a naive flat-port model predicts that refraction at the housing magnifies the image, which would scale the focal length by $1.333\times$ (the refractive index of water). To test this, a joint bundle adjustment was run over 1400 marker observations in 317 frames. It solves for the underwater focal lengths, the board layout and the camera pose of every frame at once, with the overall scale pinned by the ruler-measured marker sizes. The result supports the in-air values. The recovered aspect ratio is $f_y/f_x = 0.996$ (square pixels), the best-fitting focal length improves on the in-air value by only 1.9\%, and the $1.333\times$ refraction correction fits 44\% worse and is rejected. The shipped intrinsics are therefore used unchanged. However, the focal length still carries a scale uncertainty of roughly $\pm$10\%, which dominates the error budget of every metric range. For this reason, the primary variable throughout Part~B is the apparent marker size in pixels, which does not depend on the calibration at all. Metric range is derived from it and reported with its uncertainty.
+
+\subsubsection{Experiment design}
+
+The experiment consists of two walk-back runs, where the camera retreats from the board and sweeps the range continuously from about 0.6~m to beyond the detection limit. Every frame therefore samples all markers on the target board at a common range and water condition. Viewing angle, however, was not controlled. The on-axis run has a median marker incidence of 13$^\circ$ and the oblique run 58$^\circ$, with no coverage between the two regimes. The angle also varies together with range and marker size within each run, so its effect cannot be separated from theirs, and no detection-versus-angle curve is reported. Note that no external ground truths (tape nor vehicle odometry) were used to validate the vehicle's pose during the recording. Detection is scored per marker-frame trial against the apparent-size bins, with a minimum of ten trials per bin and Wilson confidence intervals (2551 trials on axis, 950 oblique). Maximum detection range is defined as uncensored since the range is limited to the true detections.
+
+\subsubsection{Turbidity measurement and synthetic degradation}
+
+Water attenuation was measured from the target in the frame itself, without dosing the water with external agents or using a turbidity meter. The key idea is that a black patch (the marker border) and a white patch (the surrounding sheet) at the same range share the same veiling-light term $B$ in the image formation model $I = J e^{-\beta d} + B(1 - e^{-\beta d})$. Subtracting one from the other therefore cancels $B$ entirely, leaving $\mathrm{contrast}(d) = (J_w - J_b)\,e^{-\beta d}$, so $\beta$ becomes a straight-line fit in log space. Two corrections are required for this fit. First, an instrument-response correction $k$(apparent~px) compensates for the camera reporting lower contrast on markers that appear small in the image (up to 18\% low). This correction is measured at a fixed range, so it is independent of $\beta$. Without it, the size-dependent bias mimics attenuation, since distant markers also appear small. Second, each marker gets its own fit intercept, since the three sheets sit under different local lighting. The image formation model is the standard attenuation-plus-veiling form \cite{jaffe1990computer}.
+
+Higher turbidity than the pool's was synthesised by re-attenuating each real frame in place, following $I' = B + (I - B)\,e^{-\Delta\beta\, d(x)}$ per channel and per pixel. The per-pixel range $d(x)$ comes from the board-plane pose, and the added attenuation is a multiple of the measured one, $\Delta\beta = m\,\beta$, with $m \in \{0, 0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 8\}$ ($m{=}0$ reproduces the real frame). The results are reported against the total optical depth $\tau = (1{+}m)\,\beta d$ instead of named water types. This axis has a useful property, in that range only enters the model as the product $\beta d$, so any uniform scale error in the range is absorbed into $\beta$. The $\tau$ axis is therefore unaffected by the $\pm$10\% range uncertainty and can be compared across waters and cameras. Note that the synthesis adds contrast loss but no scattering blur, so any benefit a contrast-enhancing preprocessor shows on synthesised frames is an upper bound. The full chain is summarised in Figure~\ref{fig:turbpipe}.
+
+\begin{figure}[H]
+    \centering
+    \input{Figures/tikz/turbidity-pipeline}
+    \caption{Turbidity processing, where the top row measures the water's
+        attenuation from the target itself, while the bottom row stresses the same
+        frames to higher optical depth.}
+    \label{fig:turbpipe}
+\end{figure}
+
+\subsubsection{Detection pipeline and metrics}
+
+Detection uses OpenCV~4.10 with the current \texttt{ArucoDetector} API and subpixel corner refinement. The \texttt{adaptiveThreshConstant} parameter was lowered from the default 7 to 3, which is the best of a grid over $\{3, 5, 7\}$ scored at the highest synthesised turbidity. The quantity under test is the single-marker pose, computed with planar PnP (IPPE square). Its reference is a multi-marker board pose computed leave-one-out, meaning the marker under test is excluded from the reference it is judged against. Detected IDs that do not belong to the board are kept rather than filtered out, so the misidentification rate remains measurable.

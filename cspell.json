@@ -1,0 +1,27 @@
+{
+    "language": "en-GB",
+    // words - list of words to be always considered correct
+    "words": [
+        "Corflute",
+        "feedforward",
+        "Maire",
+        "PBVS",
+        "REMUS",
+        "Trslic",
+        "WHOI"
+    ],
+    // flagWords - list of words to be always considered incorrect
+    // This is useful for offensive words and common spelling errors.
+    // For example "hte" should be "the"
+    "flagWords": [
+        "hte",
+        "teh"
+    ],
+    // ignorePaths - list of paths to be ignored by cspell
+    "ignorePaths": [
+        "**/.git/**",
+        "**/.vscode/**",
+        "cspell.json",
+        "References.bib"
+    ]
+}

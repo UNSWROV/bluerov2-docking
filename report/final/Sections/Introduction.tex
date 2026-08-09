@@ -1,0 +1,29 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Docking provides an underwater vehicle a place to recharge, offload its data and perform long-running tasks without surfacing or returning to a support ship. Since surfacing and recovery are slow, and weather-limited and expensive, removing them from the mission cycle is what makes long deployments and resident vehicle systems possible. The engineering challenge concentrates in the last few metres of the dock approach (Figure~\ref{fig:docking-problem}), in which if this stage goes wrong, the vehicle may collide with the dock, or abort and spend unnecessary time and energy retrying.
+
+\begin{figure}[H]
+    \centering
+    \input{Figures/tikz/intro-docking-problem}
+    \caption{The terminal docking problem. The vehicle must fly the final
+        metres onto a docking station using its forward camera and marker detection, while the dock itself sways with the sea above.}
+    \label{fig:docking-problem}
+\end{figure}
+
+Conventionally, a docking mission is staged by sensing modality, like acoustic or electromagnetic homing, to bring the vehicle from long range into the vicinity of the dock, then vision takes over for the final metres, where the precision requirement is tightest. This thesis addresses only the vision stage, and homing and the mechanical capture are out of scope. Within the vision stage, two practical difficulties receive little attention in the literature. First, a real dock is rarely still, since moored and suspended structures inherit the wave motion of the sea around them. Second, the water limits how far a camera can see the dock at all, so marker visibility itself becomes a design constraint.
+
+The work is split into two parts (Figure~\ref{fig:workflow}). Part~A develops the complete docking pipeline in simulation (marker fusion, a Kalman filter for the dock pose, and phase control) and runs it against a dock swaying at certain wave periods.\footnote{The docking stack and simulation fork are available at \url{https://github.com/alanchoi00/bluerov2-docking} and \url{https://github.com/alanchoi00/blue-sim}.} A docking trial sweep through the sway periods is performed to determine where the docking breaks down and the failure analysis explains why. Part~B takes the marker detector into real water where a pool capture measures detection against marker size, maximum detection range and the water's attenuation coefficient, and the same frames are then processed with artificial turbidity to produce a marker sizing rule. This split is necessary since the Gazebo simulator is able to exercise the closed loop, but cannot render water optics.
+
+\begin{figure}[H]
+    \centering
+    \input{Figures/tikz/intro-workflow}
+    \caption{How the two parts fit together. The return arrow in Part~A is
+        the closed control loop and Part~B is an open-loop measurement chain.
+        Their outputs combine into the envelope and design rules.}
+    \label{fig:workflow}
+\end{figure}
+
+The objective of this thesis is to build and validate a terminal docking stage from passive markers and computer vision, the approach available to a low-cost ROV, and to establish its operating envelope. In simulation, the system docks autonomously onto a swaying dock, cleanly down to 8~s sway periods at 0.1~m amplitude. The swept periods are mapped to the NSW sea states to determine suitable dock depths. The sweep also uncovered a control instability. Estimating the dock's velocity through a moving camera lets the vehicle's own motion corrupt the estimate, and at short sway periods this feedback destabilises the approach, while a simpler design that never estimates dock velocity is unaffected. On the sensing side, measurements on real underwater imagery established the perception envelope. A marker needs around 27 pixels of apparent size to be detected, maximum detection range is about 35 times the marker side, the water's attenuation coefficient was measured from the imagery itself, and inverting these numbers yields a sizing rule for the dock's markers.
+
+Section~\ref{sec:literature-review} reviews the docking literature and states the research gap. Section~\ref{sec:methodology} describes the system and the experimental method for both parts. Section~\ref{sec:results} presents and discusses the results, and Section~\ref{sec:conclusion} concludes with future work.

@@ -1,0 +1,85 @@
+\documentclass{article} % Choose class of document
+
+% Define required packages here 
+\usepackage{nomencl}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage[margin=3cm]{geometry}
+\usepackage[bottom]{footmisc}
+\usepackage{setspace}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{import}
+\usepackage{tabularx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, shapes.geometric, fit, calc}
+\usepackage{url}
+
+% Command for nomenclature which is defined here prior to the start of the document
+\makenomenclature
+\renewcommand{\nompreamble}{(The nomenclature must respect the following order: latin symbols, Greek symbols, acronyms. Within each category of symbols, follow alphabetic order. An example is provided below)}
+
+% Set the spacing between lines of the document
+\onehalfspacing
+
+% The document commences here (everything above is used to set up the .tex file
+\begin{document}
+
+% Input the Title Page .tex file here (inputs have been used to collate the section and manage the document easier).
+\input{Sections/TitlePage.tex}
+
+% Page breaks can be used to start a new page
+\pagebreak
+
+\input{Sections/Originality Statement}
+
+\pagebreak
+
+\input{Sections/Abstract}
+
+\pagebreak
+
+\input{Sections/Acknowledgments}
+
+\pagebreak
+
+\tableofcontents
+
+\pagebreak
+
+\cleardoublepage
+
+\addcontentsline{toc}{section}{List of Figures}
+\listoffigures
+
+\pagebreak
+
+\cleardoublepage
+
+\pagebreak
+
+\input{Sections/Introduction}
+
+\input{Sections/Literature Review}
+
+\input{Sections/Methodology}
+
+\input{Sections/Results and discussion}
+
+\input{Sections/Conclusion}
+
+\cleardoublepage
+
+\addcontentsline{toc}{section}{References}
+% The reference list is defined here
+\bibliographystyle{plain} % The bibliography style is defined here. A list of avaliable styles can be found here: https://www.overleaf.com/learn/latex/bibtex_bibliography_styles
+\bibliography{References} % The reference list is inserted here from the References.bib file
+
+% \pagebreak
+
+% \input{Sections/Appendix}
+
+\end{document}
+
+
