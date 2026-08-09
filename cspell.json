@@ -2,7 +2,10 @@
     "language": "en-GB",
     // words - list of words to be always considered correct
     "words": [
+        "Corflute",
+        "feedforward",
         "Maire",
+        "PBVS",
         "REMUS",
         "Trslic",
         "WHOI"

@@ -4,7 +4,7 @@
   \centering
   \input{Figures/tikz/architecture}
   \caption{System architecture. The state machine gates the controllers on the
-    filter's health signal; the vehicle-to-camera feedback path is the
+    filter's health signal, and the vehicle-to-camera feedback path is the
     ego-motion coupling analysed in Section~\ref{sec:results-a}.}
   \label{fig:arch}
 \end{figure}
@@ -15,6 +15,7 @@ The system includes a perception, guidance and control sub-pipeline for the term
   \item \textsc{IDLE}: vehicle not active or on hold.
   \item \textsc{COARSE}: vehicle drive to a standoff point on the dock entry axis.
   \item \textsc{FINE}: vehicle fine aligns with the dock centre pose and advance into entry.
+  \item \textsc{DOCKED}: vehicle is docked within tolerance and disarmed.
 \end{enumerate}
 
 \begin{figure}[H]

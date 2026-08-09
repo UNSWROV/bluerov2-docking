@@ -5,7 +5,7 @@ Passive visual markers are high-contrast patterns (typically black and white pix
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.6\textwidth]{Figures/fractal_markers_new_approach.png}
-    \caption{Result of the Fractal Markers against regular squared markers at different distances and occlusion: Fractal Markers can be detected in more cases than regular squared markers \cite{romeroramirez2019fractal}.}
+    \caption{Result of the Fractal Markers against regular squared markers at different distances and occlusion, where Fractal Markers can be detected in more cases than regular squared markers \cite{romeroramirez2019fractal}.}
     \label{fig:fractal-marker}
 \end{figure}
 
@@ -24,7 +24,7 @@ Most recently, Ni et al. proposed a hybrid active and passive docking marker whe
     \item Level I: the LED array is used as visual markers for pose estimation. However, at close range, the light scattering can introduce errors in estimating the center of the guidance light source.
     \item Level II: the AprilTag is used for precise pose estimation. However, this guidance method is limited by the detection range and visibility of the tag under turbidity, water quality and illumination.
 \end{itemize}
-The docking process begins by capturing an image, which is preprocessed through configured filters to minimise noise in the image. The YOLO-D model then detects the center \(X_L\) of the LED array and the AprilTag region of interest (ROI) in the image frame. In Level I guidance, the obtained \(X_L\) is used to compute a coarse position \(P_L\) of the docking station relative to the AUV. In Level II guidance, the AprilTag corners \(X_A\) are extracted from the ROI and used to compute a precise pose \(P_A\) via PnP. Finally, the pose estimates from both levels are fused to compute the overall \(P_{out}\), following the formula:
+The docking process begins by capturing an image, which is preprocessed through configured filters to minimise noise in the image. The YOLO-D model then detects the center \(X_L\) of the LED array and the AprilTag region of interest (ROI) in the image frame. In Level I guidance, the obtained \(X_L\) is used to compute a coarse position \(P_L\) of the docking station relative to the AUV. In Level II guidance, the AprilTag corners \(X_A\) are extracted from the ROI and used to compute a precise pose \(P_A\) via PnP. Finally, the pose estimates from both levels are fused to compute the overall \(P_{out}\), following the formula
 
 \[ P_{out} = K_1 P_L + K_2 P_A \]
 

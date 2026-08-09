@@ -8,67 +8,67 @@ This appendix records the perception components that were modified from their pu
 
 Each detected marker $i$ yields a PnP pose $(\mathbf{p}_i^{c}, q_i^{c})$ in the camera frame. With the marker's surveyed pose in the dock frame $(\mathbf{p}_i^{d}, q_i^{d})$ known from the layout, the dock origin implied by that single marker is
 \begin{equation}
-q_{\mathrm{dock},i}^{c} = q_i^{c} \otimes (q_i^{d})^{-1}, \qquad
-\mathbf{p}_{\mathrm{dock},i}^{c} = \mathbf{p}_i^{c} - R\!\left(q_{\mathrm{dock},i}^{c}\right)\mathbf{p}_i^{d}.
+    q_{\mathrm{dock},i}^{c} = q_i^{c} \otimes (q_i^{d})^{-1}, \qquad
+    \mathbf{p}_{\mathrm{dock},i}^{c} = \mathbf{p}_i^{c} - R\!\left(q_{\mathrm{dock},i}^{c}\right)\mathbf{p}_i^{d}.
 \end{equation}
 
-The measurement noise assigned to marker $i$ follows the PnP error scaling: position error grows as $r^2/(s f_{px})$ for range $r$, marker side $s$ and focal length $f_{px}$, while rotation error, set by angular rather than metric resolution, carries one factor of $r$ less. With the fixed camera intrinsics absorbed into a single calibrated constant $\alpha$,
+The measurement noise assigned to marker $i$ follows the PnP error scaling, in which position error grows as $r^2/(s f_{px})$ for range $r$, marker side $s$ and focal length $f_{px}$, while rotation error, set by angular rather than metric resolution, carries one factor of $r$ less. With the fixed camera intrinsics absorbed into a single calibrated constant $\alpha$,
 \begin{equation}
-\sigma_{p,i} = \alpha\, r_i^2 / s_i, \qquad
-\sigma_{R,i} = \alpha\, r_i / s_i, \qquad
-\mathbf{R}_i = \mathrm{diag}\!\left(\sigma_{p,i}^2 \mathbf{I}_3,\; \sigma_{R,i}^2 \mathbf{I}_3\right),
+    \sigma_{p,i} = \alpha\, r_i^2 / s_i, \qquad
+    \sigma_{R,i} = \alpha\, r_i / s_i, \qquad
+    \mathbf{R}_i = \mathrm{diag}\!\left(\sigma_{p,i}^2 \mathbf{I}_3,\; \sigma_{R,i}^2 \mathbf{I}_3\right),
 \end{equation}
-with $\alpha = 0.001$ in all Part~A trials. This range-squared kernel replaces the exponential weight of Xu et al.\ \cite{xu2021underwater}, which saturates numerically once $r/s$ leaves its calibrated band; the quadratic form grows without bound at far range, which is physically correct and handled downstream by the validation gate.
+with $\alpha = 0.001$ in all Part~A trials. This range-squared kernel replaces the exponential weight of Xu et al.\ \cite{xu2021underwater}, which saturates numerically once $r/s$ leaves its calibrated band and the quadratic form grows without bound at far range, which is physically correct and handled downstream by the validation gate.
 
 \subsection*{A.2 Spatial consensus}
 
-Before fusion, the implied dock orientations are checked for mutual consistency following the spatial outlier test of Kim et al.\ \cite{kim2024enhancing}. For each pair $(i,j)$ the geodesic rotation distance $\theta_{ij} = \left\| \mathrm{Log}\!\left((q_{\mathrm{dock},i}^{c})^{-1} \otimes q_{\mathrm{dock},j}^{c}\right) \right\|$ is compared against a threshold of $8^{\circ}$; each marker's disagreement count is the number of pairings exceeding the threshold, and the worst marker is removed iteratively until all survivors agree. The test is skipped when fewer than three markers are visible, since no majority exists.
+Before fusion, the implied dock orientations are checked for mutual consistency following the spatial outlier test of Kim et al.\ \cite{kim2024enhancing}. For each pair $(i,j)$ the geodesic rotation distance $\theta_{ij} = \left\| \mathrm{Log}\!\left((q_{\mathrm{dock},i}^{c})^{-1} \otimes q_{\mathrm{dock},j}^{c}\right) \right\|$ is compared against a threshold of $8^{\circ}$. Each marker's disagreement count is the number of pairings exceeding the threshold, and the worst marker is removed iteratively until all survivors agree. The test is skipped when fewer than three markers are visible, since no majority exists.
 
 \subsection*{A.3 Inverse-variance fusion}
 
 The surviving single-marker poses are fused by inverse-variance weighting \cite{xu2021underwater}. Position fuses in closed form,
 \begin{equation}
-\mathbf{P}_p = \Bigl(\textstyle\sum_i \sigma_{p,i}^{-2}\mathbf{I}_3\Bigr)^{-1}, \qquad
-\hat{\mathbf{p}} = \mathbf{P}_p \textstyle\sum_i \sigma_{p,i}^{-2}\,\mathbf{p}_{\mathrm{dock},i}^{c},
+    \mathbf{P}_p = \Bigl(\textstyle\sum_i \sigma_{p,i}^{-2}\mathbf{I}_3\Bigr)^{-1}, \qquad
+    \hat{\mathbf{p}} = \mathbf{P}_p \textstyle\sum_i \sigma_{p,i}^{-2}\,\mathbf{p}_{\mathrm{dock},i}^{c},
 \end{equation}
-and orientation fuses by the same weights in the tangent space at the first survivor's quaternion $q_1$: with $\boldsymbol{\delta}_i = \mathrm{Log}(q_1^{-1} \otimes q_{\mathrm{dock},i}^{c})$,
+and orientation fuses by the same weights in the tangent space at the first survivor's quaternion $q_1$. With $\boldsymbol{\delta}_i = \mathrm{Log}(q_1^{-1} \otimes q_{\mathrm{dock},i}^{c})$,
 \begin{equation}
-\mathbf{P}_R = \Bigl(\textstyle\sum_i \sigma_{R,i}^{-2}\mathbf{I}_3\Bigr)^{-1}, \qquad
-\hat{q} = q_1 \otimes \mathrm{Exp}\Bigl(\mathbf{P}_R \textstyle\sum_i \sigma_{R,i}^{-2}\boldsymbol{\delta}_i\Bigr),
+    \mathbf{P}_R = \Bigl(\textstyle\sum_i \sigma_{R,i}^{-2}\mathbf{I}_3\Bigr)^{-1}, \qquad
+    \hat{q} = q_1 \otimes \mathrm{Exp}\Bigl(\mathbf{P}_R \textstyle\sum_i \sigma_{R,i}^{-2}\boldsymbol{\delta}_i\Bigr),
 \end{equation}
 valid to first order because the consensus test bounds the tangent deltas. The fused pose, its covariance and the surviving marker count form the measurement passed to the filter.
 
 \subsection*{A.4 Error-state Kalman filter}
 
-The filter state is $\mathbf{x} = [\mathbf{p}, \mathbf{v}, \boldsymbol{\delta\theta}] \in \mathbb{R}^9$: dock position, dock velocity and a small-angle rotation error about a reference quaternion $q_{\mathrm{ref}}$ carried alongside the state \cite{sola2017quaternion}. The prediction at rate 30~Hz is constant-velocity in position and identity in rotation,
+The filter state is $\mathbf{x} = [\mathbf{p}, \mathbf{v}, \boldsymbol{\delta\theta}] \in \mathbb{R}^9$, holding the dock position, the dock velocity and a small-angle rotation error about a reference quaternion $q_{\mathrm{ref}}$ carried alongside the state \cite{sola2017quaternion}. The prediction at rate 30~Hz is constant-velocity in position and identity in rotation,
 \begin{equation}
-\mathbf{p} \leftarrow \mathbf{p} + \mathbf{v}\,\Delta t, \qquad
-\mathbf{F} = \begin{bmatrix} \mathbf{I}_3 & \Delta t\,\mathbf{I}_3 & \mathbf{0} \\ \mathbf{0} & \mathbf{I}_3 & \mathbf{0} \\ \mathbf{0} & \mathbf{0} & \mathbf{I}_3 \end{bmatrix}, \qquad
-\mathbf{P} \leftarrow \mathbf{F}\mathbf{P}\mathbf{F}^{T} + \mathbf{Q}.
+    \mathbf{p} \leftarrow \mathbf{p} + \mathbf{v}\,\Delta t, \qquad
+    \mathbf{F} = \begin{bmatrix} \mathbf{I}_3 & \Delta t\,\mathbf{I}_3 & \mathbf{0} \\ \mathbf{0} & \mathbf{I}_3 & \mathbf{0} \\ \mathbf{0} & \mathbf{0} & \mathbf{I}_3 \end{bmatrix}, \qquad
+    \mathbf{P} \leftarrow \mathbf{F}\mathbf{P}\mathbf{F}^{T} + \mathbf{Q}.
 \end{equation}
 
 The two process-noise regimes of the Part~A ablation differ only in $\mathbf{Q}$. The \emph{static} regime is a position random walk with the velocity block zeroed,
 \begin{equation}
-\mathbf{Q}_{\mathrm{static}} = \mathrm{diag}\!\left(q_p \Delta t\,\mathbf{I}_3,\; \mathbf{0}_3,\; q_R \Delta t\,\mathbf{I}_3\right), \qquad q_p = q_R = 10^{-4},
+    \mathbf{Q}_{\mathrm{static}} = \mathrm{diag}\!\left(q_p \Delta t\,\mathbf{I}_3,\; \mathbf{0}_3,\; q_R \Delta t\,\mathbf{I}_3\right), \qquad q_p = q_R = 10^{-4},
 \end{equation}
 while the \emph{sway} regime is white-noise acceleration of density $\sigma_a$ (nominally $0.16$~m/s$^2$) with the standard coupled blocks per axis,
 \begin{equation}
-\mathbf{Q}_{\mathrm{sway}} =
-\begin{bmatrix}
-\sigma_a^2 \frac{\Delta t^3}{3} \mathbf{I}_3 & \sigma_a^2 \frac{\Delta t^2}{2} \mathbf{I}_3 & \mathbf{0} \\
-\sigma_a^2 \frac{\Delta t^2}{2} \mathbf{I}_3 & \sigma_a^2 \Delta t\, \mathbf{I}_3 & \mathbf{0} \\
-\mathbf{0} & \mathbf{0} & q_R \Delta t\, \mathbf{I}_3
-\end{bmatrix}.
+    \mathbf{Q}_{\mathrm{sway}} =
+    \begin{bmatrix}
+        \sigma_a^2 \frac{\Delta t^3}{3} \mathbf{I}_3 & \sigma_a^2 \frac{\Delta t^2}{2} \mathbf{I}_3 & \mathbf{0}                  \\
+        \sigma_a^2 \frac{\Delta t^2}{2} \mathbf{I}_3 & \sigma_a^2 \Delta t\, \mathbf{I}_3           & \mathbf{0}                  \\
+        \mathbf{0}                                   & \mathbf{0}                                   & q_R \Delta t\, \mathbf{I}_3
+    \end{bmatrix}.
 \end{equation}
 
 The fused measurement observes position and orientation directly, $\mathbf{H} = [\mathbf{I}_3\; \mathbf{0}\; \mathbf{0};\; \mathbf{0}\; \mathbf{0}\; \mathbf{I}_3]$, with innovation $\mathbf{y} = [\hat{\mathbf{p}} - \mathbf{p},\; \mathrm{Log}(q_{\mathrm{ref}}^{-1} \otimes \hat{q})]$ and the fused blocks as $\mathbf{R}$. An update is accepted only if it passes the validation gate
 \begin{equation}
-d^2 = \mathbf{y}^{T}\left(\mathbf{H}\mathbf{P}\mathbf{H}^{T} + \mathbf{R}\right)^{-1}\mathbf{y} \;\leq\; \chi^2_{6,\,0.995} = 18.55,
+    d^2 = \mathbf{y}^{T}\left(\mathbf{H}\mathbf{P}\mathbf{H}^{T} + \mathbf{R}\right)^{-1}\mathbf{y} \;\leq\; \chi^2_{6,\,0.995} = 18.55,
 \end{equation}
-after which the error state is injected and reset in the usual way \cite{sola2017quaternion}. Two physically motivated bounds close the estimator. After each update the velocity state is clamped isotropically to the maximum credible dock speed, $\mathbf{v} \leftarrow \mathbf{v} \cdot \min(1, v_{\max}/\|\mathbf{v}\|)$ with $v_{\max} = 0.2$~m/s: a measurement implying a faster dock is ego-motion leakage, not dock motion. A covariance ceiling declares the estimate stale once the position uncertainty exceeds 0.15~m (Appendix~A.5), so controllers hold rather than act on an unconstrained state. Initialisation requires at least two consensus-surviving markers, since a single planar marker leaves the PnP flip ambiguity unresolved; the first accepted measurement seeds the state with its covariance inflated $100\times$, and the initial velocity standard deviation is $0.2$~m/s in the sway regime and $0$ in the static regime.
+after which the error state is injected and reset in the usual way \cite{sola2017quaternion}. Two physically motivated bounds close the estimator. After each update the velocity state is clamped isotropically to the maximum credible dock speed, $\mathbf{v} \leftarrow \mathbf{v} \cdot \min(1, v_{\max}/\|\mathbf{v}\|)$ with $v_{\max} = 0.2$~m/s, since a measurement implying a faster dock is ego-motion leakage and not dock motion. A covariance ceiling declares the estimate stale once the position uncertainty exceeds 0.15~m (Appendix~A.5), so controllers hold rather than act on an unconstrained state. Initialisation requires at least two consensus-surviving markers, since a single planar marker leaves the PnP flip ambiguity unresolved. The first accepted measurement seeds the state with its covariance inflated $100\times$, and the initial velocity standard deviation is $0.2$~m/s in the sway regime and $0$ in the static regime.
 
-The static regime is algebraically a constant-position filter. With $\mathbf{v}(0) = \mathbf{0}$, zero initial velocity covariance and zero velocity process noise, every term that could grow the velocity covariance or its cross-covariance with position is zero, so both remain identically zero; the Kalman gain rows onto the velocity state are therefore zero for every update, and $\mathbf{v} \equiv \mathbf{0}$ for all time. The baseline of Part~A is this filter, and the feedforward it feeds is exactly zero by construction.
+The static regime is algebraically a constant-position filter. With $\mathbf{v}(0) = \mathbf{0}$, zero initial velocity covariance and zero velocity process noise, every term that could grow the velocity covariance or its cross-covariance with position is zero, so both remain identically zero. The Kalman gain rows onto the velocity state are therefore zero for every update, and $\mathbf{v} \equiv \mathbf{0}$ for all time. The baseline of Part~A is this filter, and the feedforward it feeds is exactly zero by construction.
 
 \subsection*{A.5 Health classification}
 
-Downstream consumers see only a semantic health signal computed from the age $a$ of the last accepted measurement and the position uncertainty $\sigma_p = \max_k \sqrt{\mathbf{P}_{kk}}$ over the position block: \textsc{warming} before initialisation; \textsc{stale} if $a > 3$~s or $\sigma_p > 0.15$~m; \textsc{healthy} if $a \leq 0.5$~s and $\sigma_p \leq 0.04$~m; \textsc{degraded} otherwise. The supervisory state machine treats \textsc{warming} and \textsc{stale} as perception loss.
+Downstream consumers see only a semantic health signal computed from the age $a$ of the last accepted measurement and the position uncertainty $\sigma_p = \max_k \sqrt{\mathbf{P}_{kk}}$ over the position block. The status is \textsc{warming} before initialisation, \textsc{stale} if $a > 3$~s or $\sigma_p > 0.15$~m, \textsc{healthy} if $a \leq 0.5$~s and $\sigma_p \leq 0.04$~m, and \textsc{degraded} otherwise. The supervisory state machine treats \textsc{warming} and \textsc{stale} as perception loss.
