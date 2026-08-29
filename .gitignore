@@ -1,24 +1,3 @@
-# LaTeX auxiliary files
-# Source: https://stackoverflow.com/a (Avi Parshan, CC BY-SA 4.0, retrieved 2025-11-15)
-**/*.aux
-**/*.lof
-**/*.log
-**/*.lot
-**/*.fls
-**/*.out
-**/*.toc
-**/*.fmt
-**/*.fot
-**/*.cb
-**/*.cb2
-**/*.lb
-**/*.bbl
-**/*.bcf
-**/*.blg
-**/*.nlo
-**/*.synctex.gz
-**/*.fdb_latexmk
-
 .DS_Store
 
 # VS Code machine-specific files
