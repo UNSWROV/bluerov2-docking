@@ -1,5 +1,0 @@
-\subsection{Visual servoing and guidance for docking}
-
-Visual servo control divides into two schemes. Image-based visual servoing (IBVS) regulates the feature error directly in the image plane, while position-based visual servoing (PBVS) reconstructs a metric relative pose and regulates it in Cartesian space \cite{chaumette2006visual}. In this work, the perception layer already produces a full 6-DOF pose from fiducial markers of known geometry using the standardised marker PnP algorithm \cite{garrido2014automatic}. Therefore, position-based servoing adds no extra cost, and it keeps the docking geometry expressible in physical units, which is why it is adopted here.
-
-However, the servoing literature assumes that the target pose is fixed. For the moving docks of Section~\ref{sec:lit-dock-motion}, the servo target itself oscillates, and regulating onto it raises the estimation question taken up next.
