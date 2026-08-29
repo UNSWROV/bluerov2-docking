@@ -24,6 +24,14 @@ The system drives the BlueROV2 onto a dock through a perception-to-control pipel
 | `orchestrator` | YASMIN docking FSM + joystick deadman/engage relay |
 | `interfaces` | Custom messages (filter health, dock-pose measurement, coarse/fine status, docking state) |
 
+### Other directories
+
+| Directory | Description |
+|-----------|-------------|
+| `prototyping/` | Offline tuning harness for the coarse-approach PBVS gains: closes the loop between `control.pbvs` and the BlueRovSim plant without Gazebo. `tune.py` is the entry point; `results/coarse_pbvs_gains.yaml` and the step-response plots are its output. |
+| `scripts/` | Docking trial recording, sweep runner, and the analysis scripts that scored the trials for the thesis results |
+| `third_party/BlueRovSim` | Git submodule of [UNSWROV/BlueRovSim](https://github.com/UNSWROV/BlueRovSim), the Python 6-DOF plant used by `prototyping/`. Run `git submodule update --init` to fetch it (org access required); everything else works without it. |
+
 ## Prerequisites
 
 - **x86_64 (amd64) host required** — the base image and ArduSub SITL have no ARM builds. Mac (Apple Silicon) and ARM VMs are not supported.
@@ -145,7 +153,19 @@ ros2 launch sim sim.launch.py use_foxglove:=true
 
 Connect the viewer to `ws://localhost:8765` (open connection -> **Foxglove WebSocket**; the dev container runs with `--network=host`), then open the layout `src/description/foxglove/docking.json` from the app.
 
+## Thesis
+
+This repository is the Part A (simulation) half of a UNSW Bachelor of Engineering thesis, *Autonomous Visual Docking of a ROV onto a Moving Dock: Terminal Guidance in Simulation and Empirical Limits of ArUco Perception Underwater* (2026).
+
+- Report sources and PDFs: [alanchoi00/bluerov2-docking-thesis](https://github.com/alanchoi00/bluerov2-docking-thesis)
+- PDFs are also attached to the [`thesis-c` release](https://github.com/alanchoi00/bluerov2-docking/releases/tag/thesis-c) of this repository
+- Part B, the real-imagery ArUco range and turbidity study: [alanchoi00/underwater-aruco-validation](https://github.com/alanchoi00/underwater-aruco-validation)
+
 ## Related
 
 - [alanchoi00/blue-sim](https://github.com/alanchoi00/blue-sim): Gazebo simulation base
 - [Robotic-Decision-Making-Lab/blue](https://github.com/Robotic-Decision-Making-Lab/blue): upstream blue package
+
+## License
+
+[MIT](LICENSE).
