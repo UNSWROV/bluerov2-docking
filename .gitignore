@@ -1,8 +1,5 @@
-% Source - https://stackoverflow.com/a
-% Posted by Avi Parshan
-% Retrieved 2025-11-15, License - CC BY-SA 4.0
-
-## Core latex/pdflatex auxiliary files:
+# LaTeX auxiliary files
+# Source: https://stackoverflow.com/a (Avi Parshan, CC BY-SA 4.0, retrieved 2025-11-15)
 **/*.aux
 **/*.lof
 **/*.log
@@ -25,11 +22,10 @@
 .DS_Store
 
 # VS Code machine-specific files
-.vscode/browse.vc.db
-.vscode/browse.vc.db-shm
-.vscode/browse.vc.db-wal
+.vscode/browse.vc.db*
 .vscode/c_cpp_properties.json
 
+# ROS 2 / colcon workspace
 build/
 install/
 log/
@@ -38,8 +34,11 @@ logs/
 # Hardware artifacts
 eeprom.bin
 
-# python
-**/*/__pycache__
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
 
 # Claude's local files
 .claude
