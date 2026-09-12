@@ -1,4 +1,4 @@
-FROM ghcr.io/alanchoi00/blue-sim:jazzy-desktop-nvidia
+FROM ghcr.io/unswrov/blue-sim:jazzy-desktop-nvidia
 
 ENV USER_WORKSPACE=/home/ubuntu/ws_docking
 WORKDIR $USER_WORKSPACE
