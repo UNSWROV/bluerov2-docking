@@ -44,7 +44,7 @@ The system drives the BlueROV2 onto a dock through a perception-to-control pipel
 Clone the repo:
 
 ```bash
-git clone https://github.com/alanchoi00/bluerov2-docking.git
+git clone https://github.com/UNSWROV/bluerov2-docking.git
 cd bluerov2-docking
 ```
 
@@ -93,13 +93,13 @@ To update: pull the new image with `docker pull`, then run **Dev Containers: Reb
 To update the base image:
 
 ```bash
-docker pull ghcr.io/alanchoi00/blue-sim:jazzy-desktop        # Nouveau
-docker pull ghcr.io/alanchoi00/blue-sim:jazzy-desktop-nvidia  # NVIDIA
+docker pull ghcr.io/unswrov/blue-sim:jazzy-desktop        # Nouveau
+docker pull ghcr.io/unswrov/blue-sim:jazzy-desktop-nvidia  # NVIDIA
 ```
 
 ## Simulation
 
-The Gazebo environment is built on [alanchoi00/blue-sim](https://github.com/alanchoi00/blue-sim) (ROS2 Jazzy). Pre-built Docker images are published to GHCR.
+The Gazebo environment is built on [UNSWROV/blue-sim](https://github.com/UNSWROV/blue-sim) (ROS2 Jazzy). Pre-built Docker images are published to GHCR.
 
 ### Launch
 
@@ -158,12 +158,12 @@ Connect the viewer to `ws://localhost:8765` (open connection -> **Foxglove WebSo
 This repository is the Part A (simulation) half of a UNSW Bachelor of Engineering thesis, *Autonomous Visual Docking of a ROV onto a Moving Dock: Terminal Guidance in Simulation and Empirical Limits of ArUco Perception Underwater* (2026).
 
 - Report sources and PDFs: [alanchoi00/bluerov2-docking-thesis](https://github.com/alanchoi00/bluerov2-docking-thesis)
-- PDFs are also attached to the [`thesis-c` release](https://github.com/alanchoi00/bluerov2-docking/releases/tag/thesis-c) of this repository
+- PDFs are also attached to the [`thesis-c` release](https://github.com/UNSWROV/bluerov2-docking/releases/tag/thesis-c) of this repository
 - Part B, the real-imagery ArUco range and turbidity study: [alanchoi00/underwater-aruco-validation](https://github.com/alanchoi00/underwater-aruco-validation)
 
 ## Related
 
-- [alanchoi00/blue-sim](https://github.com/alanchoi00/blue-sim): Gazebo simulation base
+- [UNSWROV/blue-sim](https://github.com/UNSWROV/blue-sim): Gazebo simulation base
 - [Robotic-Decision-Making-Lab/blue](https://github.com/Robotic-Decision-Making-Lab/blue): upstream blue package
 
 ## License

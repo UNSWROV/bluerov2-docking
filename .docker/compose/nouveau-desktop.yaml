@@ -1,6 +1,6 @@
 services:
   blue:
-    image: ghcr.io/alanchoi00/blue-sim:jazzy-desktop
+    image: ghcr.io/unswrov/blue-sim:jazzy-desktop
     environment:
       - DISPLAY=${DISPLAY}
       - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
