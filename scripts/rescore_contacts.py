@@ -1,6 +1,5 @@
 import glob
 import os
-import re
 
 import numpy as np
 from geometry_msgs.msg import PoseStamped
@@ -16,9 +15,7 @@ DY0, DZ0 = (
     0.176,
 )  # entry-axis offset from dock origin, calibrated on the static-dock cell
 APERTURE = 0.15
-_RE = re.compile(
-    r"clamped_(sway|static)_(sway|static)_p([0-9.]+)_ph([0-9.]+)_\d{8}_\d{6}$"
-)
+from analysis.labels import parse_label
 
 
 def score(bag):
@@ -68,11 +65,13 @@ def score(bag):
 
 
 rows = []
-for b in sorted(glob.glob("/home/ubuntu/ws_docking/bags/clamped_*")):
+BAGS = os.environ.get("BAGS", "/home/ubuntu/ws_docking/bags")
+TAG = os.environ.get("SWEEP_TAG", "clamped")
+for b in sorted(glob.glob(os.path.join(BAGS, TAG + "_*"))):
     if not os.path.isdir(b):
         continue
-    m = _RE.search(os.path.basename(b))
-    if not m:
+    lab = parse_label(b)
+    if lab is None or lab.dock != "sway" and lab.period != 0:
         continue
     try:
         out, docked, io, iv, co, cv, pc = score(b)
@@ -81,10 +80,10 @@ for b in sorted(glob.glob("/home/ubuntu/ws_docking/bags/clamped_*")):
         continue
     rows.append(
         (
-            m.group(1),
-            m.group(2),
-            float(m.group(3)),
-            float(m.group(4)),
+            lab.arm,
+            lab.dock,
+            lab.period,
+            lab.phase,
             out,
             docked,
             io,
@@ -116,7 +115,7 @@ for r in sorted(rows, key=lambda r: (r[0], r[1], -r[2], r[3])):
         )
     )
 print("\n=== P(clean) / contacts, moving dock ===")
-for regime in ["static", "sway"]:
+for regime in sorted({r[0] for r in rows}):
     for per in sorted({r[2] for r in rows if r[1] == "sway"}, reverse=True):
         cell = [r for r in rows if r[0] == regime and r[1] == "sway" and r[2] == per]
         if not cell:
