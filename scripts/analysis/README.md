@@ -14,6 +14,7 @@ python3 -m analysis loop BAG T_START T_END                  # over-swing, comman
 python3 -m analysis figure mechanism BAG OUT.png [--tmax 130 --compact]
 python3 -m analysis figure pdock RESULTS.csv OUT.png        # columns: arm, period, outcome[, clean, dock]
 python3 -m analysis figure trajectory BAG OUT.png
+python3 -m analysis metrics BAG_DIR --out metrics.csv          # per-trial paper metrics
 python3 -m pytest analysis/tests
 ```
 
