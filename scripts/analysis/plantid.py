@@ -26,7 +26,9 @@ def windows(trial, min_periods=2.0):
     """(state, t_start, t_end) relative to t0 for measured stretches of one phase."""
     lab = parse_label(trial.path.rsplit("/", 1)[0]) or parse_label(trial.path)
     period = lab.period if lab and lab.period > 0 else 8.0
-    st = trial.states + [(trial.odom.t[-1], -1)]
+    # the state topic repeats at 10 Hz: keep change points only
+    changes = [trial.states[0]] + [b for a, b in zip(trial.states[:-1], trial.states[1:]) if b[1] != a[1]]
+    st = changes + [(trial.odom.t[-1], -1)]
     out = []
     for (t_a, s), (t_b, _) in zip(st[:-1], st[1:]):
         if s not in MODE:
