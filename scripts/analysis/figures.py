@@ -56,8 +56,13 @@ def pdock(results_csv: str, out: str, clean_col: str | None = "clean"):
         for r in csv.DictReader(f):
             if r.get("dock", "sway") != "sway":
                 continue
-            docked = r["outcome"].upper() == "DOCKED"
-            clean = docked and (r.get(clean_col, "1") in ("1", "True", "true", "")) if clean_col else docked
+            oc = r["outcome"].upper()
+            if oc in ("CLEAN", "CONTACT", "NO_DOCK"):          # metrics.py convention
+                docked = r.get("docked", "") in ("True", "1") or oc == "CLEAN"
+                clean = oc == "CLEAN"
+            else:                                                 # sweep runner convention
+                docked = oc == "DOCKED"
+                clean = docked and (r.get(clean_col, "1") in ("1", "True", "true", "")) if clean_col else docked
             cells[(r["arm"], float(r["period"]))].append((docked, clean))
     fig, ax = plt.subplots(figsize=(4.5, 3.2))
     for arm in sorted({k[0] for k in cells}):

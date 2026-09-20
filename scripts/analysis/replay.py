@@ -23,6 +23,7 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 from perception.aruco.lib.kalman import DockPoseKalmanFilter, make_process_noise  # noqa: E402
 
+from .labels import parse_label  # noqa: E402
 from .tracks import Trial, world_pose_from_cam  # noqa: E402
 
 
@@ -111,11 +112,19 @@ def compare(trial: Trial, res: ReplayResult, axis: int = 1) -> dict:
     )
 
 
-def report(trial: Trial, axis: int = 1, plot: str | None = None, hold_s: float = 1.0, decay_s: float = 1.0):
-    base = replay(trial)
-    var = replay(trial, ReplayParams(stale_hold_s=hold_s, stale_decay_s=decay_s))
+def regime_for(trial: Trial) -> str:
+    """The filter regime the recorded node ran: static for arm A, sway otherwise."""
+    lab = parse_label(os.path.dirname(trial.path)) or parse_label(trial.path)
+    return "static" if lab is not None and lab.arm in ("static", "A") else "sway"
+
+
+def report(trial: Trial, axis: int = 1, plot: str | None = None, hold_s: float = 1.0, decay_s: float = 1.0,
+           regime: str | None = None):
+    regime = regime or regime_for(trial)
+    base = replay(trial, ReplayParams(regime=regime))
+    var = replay(trial, ReplayParams(regime=regime, stale_hold_s=hold_s, stale_decay_s=decay_s))
     cb, cv = compare(trial, base, axis), compare(trial, var, axis)
-    print(f"bag: {trial.path.split('/')[-1]}")
+    print(f"bag: {trial.path.split('/')[-1]} (regime {regime})")
     print(f"replay of the node as recorded: replay minus recorded {cb['replay_minus_recorded_rms_cm']:.1f} cm RMS while live, "
           f"{cb['replay_minus_recorded_max_cm']:.0f} cm max; accepted {cb['accepted_frac']*100:.0f}% of measurements; "
           f"stale {cb['stale_frac']*100:.0f}% of time")
