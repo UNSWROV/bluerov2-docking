@@ -29,6 +29,8 @@ class PoseTrack:
     """Piecewise-linear position and slerp attitude over sim time, as tf2 interpolates."""
 
     def __init__(self, t, p, q):
+        if len(t) < 2:
+            raise ValueError("track needs at least two samples")
         order = np.argsort(t)
         t, p, q = np.asarray(t, float)[order], np.asarray(p, float)[order], np.asarray(q, float)[order]
         keep = np.concatenate([[True], np.diff(t) > 0])
@@ -75,10 +77,11 @@ class Trial:
 
 def load_trial(path: str) -> Trial:
     d = read_topics(path, list(TOPICS.values()))
+    for key in ("meas", "odom", "gt", "tf"):
+        if len(d[TOPICS[key]]) < 2:
+            raise ValueError(f"{path}: fewer than two messages on {TOPICS[key]}")
     meas = d[TOPICS["meas"]]
     odo = d[TOPICS["odom"]]
-    if not meas or not odo:
-        raise ValueError(f"{path}: no measurements or odometry")
     ot_s = np.array([stamp(m) for _, m in odo])
     ot_l = np.array([l for l, _ in odo])
     rtf, off = np.polyfit(ot_l, ot_s, 1)
@@ -99,7 +102,7 @@ def load_trial(path: str) -> Trial:
                        [vec3(m.pose.position) for _, m in d[TOPICS["gt"]]],
                        [quat_xyzw(m.pose.orientation) for _, m in d[TOPICS["gt"]]]),
         filt=PoseTrack([stamp(m) for _, m in filt], [vec3(m.pose.pose.position) for _, m in filt],
-                       [quat_xyzw(m.pose.pose.orientation) for _, m in filt]) if filt else None,
+                       [quat_xyzw(m.pose.pose.orientation) for _, m in filt]) if len(filt) >= 2 else None,
         t_vel=np.array([stamp(m) for _, m in d[TOPICS["vel"]]]),
         vel=np.array([vec3(m.twist.twist.linear) for _, m in d[TOPICS["vel"]]]).reshape(-1, 3),
         t_health=np.array([stamp(m) for _, m in d[TOPICS["health"]]]),
