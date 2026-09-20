@@ -69,9 +69,20 @@ REC_PID=""
 log(){ echo "[auto $(date +%H:%M:%S)] $*"; }
 # Integer simulation seconds from /clock, empty until the simulator publishes it.
 sim_now(){ timeout 3 ros2 topic echo /clock --once 2>/dev/null | awk '/^  sec:/{print $2; exit}'; }
-# Elapsed simulation seconds since $1 (a sim_now reading); falls back to wall seconds
-# since $2 while /clock is not available yet.
-sim_elapsed(){ local now; now=$(sim_now); if [ -n "$now" ] && [ -n "$1" ]; then echo $((now - $1)); else echo $((SECONDS - $2)); fi; }
+# Elapsed simulation seconds since $1 (a sim_now reading). Falls back to wall seconds
+# since $2 only while /clock has never been seen ($1 empty); once the clock exists a
+# single failed read (ros2 topic echo can exceed its timeout under load) must not
+# count as wall time, so the last good reading is repeated instead.
+LAST_SIM_ELAPSED=0
+sim_elapsed(){
+  local now; now=$(sim_now)
+  if [ -n "$1" ]; then
+    [ -n "$now" ] && LAST_SIM_ELAPSED=$((now - $1))
+    echo "$LAST_SIM_ELAPSED"
+  else
+    echo $((SECONDS - $2))
+  fi
+}
 pgid_of(){ ps -o pgid= -p "$1" 2>/dev/null | tr -d ' '; }
 killgrp(){ local g; g=$(pgid_of "${1:-}"); [ -n "$g" ] && kill -"${2:-TERM}" -- "-$g" 2>/dev/null; return 0; }
 # ArduSub SITL binds TCP 5760 (= hex 1680). `ss`/`netstat` aren't in the container,
@@ -98,6 +109,9 @@ teardown(){
   pkill -9 -f "parameter_bridge" 2>/dev/null
   pkill -9 -f "mavros_node"     2>/dev/null
   pkill -9 -f "ruby.*gz"        2>/dev/null
+  # Fast DDS leaves shared-memory port files behind after a hard kill; the next
+  # launch then logs "Failed init_port fastrtps_port..." and falls back to UDP.
+  rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null
   # wait for ArduSub's TCP 5760 to release, else the next launch collides
   for _ in $(seq 1 30); do port_5760_busy || break; sleep 1; done
   sleep 3
@@ -162,7 +176,7 @@ done
 # Heartbeat logs the health status (0 WARMING_UP, 1 HEALTHY, 2 DEGRADED, 3 STALE) so a
 # genuine stuck-at-1-marker case (status pinned 0) is distinguishable from slow warmup.
 log "waiting for filter to initialize (filtered pose flowing; <=${READY_TIMEOUT}s sim, wall guard $((READY_TIMEOUT * WALL_GUARD))s)"
-ready=0; t0=$SECONDS; last=0; s0=""
+ready=0; t0=$SECONDS; last=0; s0=""; LAST_SIM_ELAPSED=0
 while [ $((SECONDS - t0)) -lt $((READY_TIMEOUT * WALL_GUARD)) ]; do
   [ -z "$s0" ] && s0=$(sim_now)   # the clock starts with the simulator, some seconds after launch
   [ "$(sim_elapsed "$s0" "$t0")" -ge "$READY_TIMEOUT" ] && break
@@ -210,7 +224,7 @@ ENGAGE_PID=$!
 
 # --- wait for DOCKED (or timeout) ---
 log "waiting for DOCKED (<=${DOCK_TIMEOUT}s sim, wall guard $((DOCK_TIMEOUT * WALL_GUARD))s)"
-outcome="TIMEOUT"; t0=$SECONDS; s0=$(sim_now)
+outcome="TIMEOUT"; t0=$SECONDS; s0=$(sim_now); LAST_SIM_ELAPSED=0
 while [ $((SECONDS - t0)) -lt $((DOCK_TIMEOUT * WALL_GUARD)) ]; do
   [ "$(sim_elapsed "$s0" "$t0")" -ge "$DOCK_TIMEOUT" ] && break
   s=$(timeout 4 ros2 topic echo /docking/state --once 2>/dev/null | grep -oP "label: \K\w+")
