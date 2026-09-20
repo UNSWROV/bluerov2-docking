@@ -20,6 +20,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("sweep"); p.add_argument("bag_dir"); p.add_argument("--out", default="sweep_summary.csv")
     p = sub.add_parser("metrics"); p.add_argument("bag_dir"); p.add_argument("--out", default="metrics.csv")
+    p = sub.add_parser("stepfit"); p.add_argument("bag"); p.add_argument("--axis", default="y"); p.add_argument("--cmd", default="/cmd_vel")
     p = sub.add_parser("leak"); p.add_argument("bag"); p.add_argument("--plot"); p.add_argument("--axis", default="y")
     p = sub.add_parser("windows"); p.add_argument("bag"); p.add_argument("--axis", default="y")
     p = sub.add_parser("loop"); p.add_argument("bag"); p.add_argument("t_start", type=float); p.add_argument("t_end", type=float)
