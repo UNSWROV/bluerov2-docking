@@ -19,7 +19,16 @@ log "mode $MODE axis $AXIS step $STEP hold ${HOLD}s -> $OUT"
 ros2 service call /mavros/set_mode mavros_msgs/srv/SetMode "{custom_mode: '$MODE'}" >/dev/null 2>&1 || log "set_mode call failed, continuing"
 sleep 2
 ros2 bag record -o "$OUT" /clock "$CMD_TOPIC" /model/bluerov2_heavy/odometry /mavros/state >/dev/null 2>&1 &
-REC=$!; sleep 2
+REC=$!
+# A background job in a non-interactive shell ignores SIGINT, so an interrupted run
+# would leave the recorder writing forever; stop it on every exit path.
+stop_rec(){
+  kill -TERM $REC 2>/dev/null
+  for _ in $(seq 1 20); do kill -0 $REC 2>/dev/null || break; sleep 1; done
+  kill -KILL $REC 2>/dev/null; wait $REC 2>/dev/null
+}
+trap stop_rec EXIT
+sleep 2
 
 # rest, +step, rest, -step, rest, then three cycles of sinusoid at 8 s and 6 s, then rest
 python3 - "$CMD_TOPIC" "$AXIS" "$STEP" "$HOLD" <<'PY'
@@ -38,9 +47,7 @@ for per in (8.0, 6.0):
 run(lambda t: 0.0, 3)
 p.publish(Twist()); n.destroy_node(); rclpy.shutdown()
 PY
-# a background job in a non-interactive shell ignores SIGINT; TERM lets rosbag2
-# finalise the file, and the analysis reader tolerates a truncated tail anyway
-kill -TERM $REC 2>/dev/null
-for _ in $(seq 1 20); do kill -0 $REC 2>/dev/null || break; sleep 1; done
-kill -KILL $REC 2>/dev/null; wait $REC 2>/dev/null
+# TERM lets rosbag2 finalise the file, and the analysis reader tolerates a
+# truncated tail anyway
+stop_rec; trap - EXIT
 log "done: $OUT  (fit with: python3 -m analysis stepfit $OUT --axis $AXIS --cmd-topic $CMD_TOPIC)"
