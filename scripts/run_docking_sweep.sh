@@ -16,7 +16,13 @@
 #   STATIC_DOCK=1                 prepend one static-dock sanity cell per arm
 #   SWEEP_TAG=<tag>               reuse a tag to RESUME
 #   DRY_RUN=1                     list the cells and exit without launching anything
-# Per-cell timing passes through: READY_TIMEOUT, DOCK_TIMEOUT, SWAY_AMP.
+# Per-cell timing passes through: READY_TIMEOUT, DOCK_TIMEOUT (simulation seconds),
+# WALL_GUARD, SWAY_AMP.
+#
+# Stopping from outside: the script writes its pid to $WS/bags/<SWEEP_TAG>.pid, so
+#   kill -TERM "$(cat $WS/bags/<SWEEP_TAG>.pid)"
+# stops it and tears down the running cell. Do not signal the shell that launched it
+# (a `bash -ic` wrapper matches the script name in pgrep -f and ignores TERM).
 #
 # WARNING: each cell pkills gazebo/ardusub on teardown. Do not run other sims meanwhile.
 set -uo pipefail
@@ -39,6 +45,7 @@ phases_for(){  # period -> space-separated start phases
 }
 
 log(){ echo "[sweep $(date +%H:%M:%S)] $*"; }
+PIDFILE="$WS/bags/${TAG}.pid"
 
 # Stopping the sweep by pid (kill <pid>, the realistic unattended stop) must not
 # orphan the running cell: forward the signal to the child driver and wait for its
@@ -48,12 +55,14 @@ CHILD=""
 on_signal(){
   log "interrupted, stopping the running cell"
   if [ -n "$CHILD" ]; then kill -TERM "$CHILD" 2>/dev/null; wait "$CHILD" 2>/dev/null; fi
+  rm -f "$PIDFILE"
   exit 130
 }
 trap on_signal INT TERM
 if [ "${DRY_RUN:-0}" != "1" ]; then
   mkdir -p "$WS/bags"
   [ -f "$CSV" ] || echo "label,arm,dock,period,phase,nav,outcome,bag" > "$CSV"
+  echo $$ > "$PIDFILE"
 fi
 
 run_one(){  # arm nav dock period phase
@@ -99,4 +108,5 @@ for arm in "${ARMS[@]}"; do
   done
 done
 log "sweep planned/done: $n cells -> $CSV"
+rm -f "$PIDFILE"
 [ "${DRY_RUN:-0}" = "1" ] || { column -t -s, "$CSV" 2>/dev/null || cat "$CSV"; }
