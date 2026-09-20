@@ -6,6 +6,7 @@ import glob
 import os
 
 from . import figures, leak, loop, metrics, sweep, windows
+from . import figures, leak, loop, sweep, windows
 from .tracks import load_trial
 
 
