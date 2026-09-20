@@ -109,6 +109,18 @@ class DockPoseKalmanFilter:
         F[:3, 3:6] = dt * np.eye(3)
         self._covariance = F @ self._covariance @ F.T + process_noise
 
+    def decay_velocity(self, factor: float) -> None:
+        """Scale the velocity state by factor in [0, 1].
+
+        Used while no measurement is being accepted: a constant-velocity model
+        otherwise dead-reckons on its last velocity for as long as the blackout
+        lasts (a metre in 49 s at 0.023 m/s in the recorded 8 s trials). The
+        covariance is left as predicted, so the growing uncertainty still drives
+        the health signal.
+        """
+        assert self._position is not None
+        self._velocity *= float(np.clip(factor, 0.0, 1.0))
+
     def update(
         self,
         measurement_position: np.ndarray,
