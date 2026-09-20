@@ -76,11 +76,22 @@ def score(trial: Trial, res: ReplayResult, arm: str, veh_hat: PoseTrack, bias, a
     ev = res.vel[:, axis] - truth_v
     tb, b_v = bias
     bv = np.interp(t, tb, b_v[:, axis])
+    # split the velocity error into a slow part (2 s moving average, where a bias
+    # shows) and the jitter above it
+    w = max(1, int(round(2.0 / np.median(np.diff(t)))))
+    ev_slow = np.convolve(ev, np.ones(w) / w, mode="same")
+    ev_fast = ev - ev_slow
+    # the dock model origin sits a constant offset from the dock frame origin
+    dr = r_est - r_true
+    dr = dr - np.median(dr[live], axis=0)
     return dict(
         vel_err_rms_m_s=float(np.sqrt(np.mean(ev[live] ** 2))),
+        vel_err_slow_rms_m_s=float(np.sqrt(np.mean(ev_slow[live] ** 2))),
+        vel_err_fast_rms_m_s=float(np.sqrt(np.mean(ev_fast[live] ** 2))),
         vel_amp_ratio=float(np.std(res.vel[live, axis]) / (np.std(truth_v[live]) + 1e-9)),
-        vel_err_corr_bias=corr(ev[live], bv[live]),
-        rel_pos_err_rms_cm=float(np.sqrt(np.mean(np.sum((r_est[live] - r_true[live]) ** 2, axis=1)))) * 100,
+        vel_err_corr_bias=corr(ev_slow[live], bv[live]),
+        bias_rms_m_s=float(np.sqrt(np.mean(bv[live] ** 2))),
+        rel_pos_err_rms_cm=float(np.sqrt(np.mean(np.sum(dr[live] ** 2, axis=1)))) * 100,
         accepted_frac=float(res.accepted.mean()), stale_frac=float(np.mean(~live)),
     )
 
@@ -99,8 +110,9 @@ def run(bags: list[str], out_csv: str, levels=("none", "low", "medium", "high"),
                 for arm, res in (("B", resB), ("C", resC)):
                     row = dict(bag=name, level=level, seed=seed, arm=arm, **score(trial, res, arm, veh_hat, bias))
                     rows.append(row)
-                    print(f"{name[:32]:32s} {level:6s} seed {seed} arm {arm}: vel err {row['vel_err_rms_m_s']*100:5.2f} cm/s, "
-                          f"amp ratio {row['vel_amp_ratio']:.2f}, corr with bias {row['vel_err_corr_bias']:+.2f}, "
+                    print(f"{name[:32]:32s} {level:6s} seed {seed} arm {arm}: vel err {row['vel_err_rms_m_s']*100:5.2f} cm/s "
+                          f"(slow {row['vel_err_slow_rms_m_s']*100:4.2f}, fast {row['vel_err_fast_rms_m_s']*100:4.2f}, bias {row['bias_rms_m_s']*100:4.2f}), "
+                          f"amp ratio {row['vel_amp_ratio']:.2f}, slow corr with bias {row['vel_err_corr_bias']:+.2f}, "
                           f"rel pos err {row['rel_pos_err_rms_cm']:.1f} cm", flush=True)
                 if plot and level == "high" and seed == seeds[0] and bag == bags[0]:
                     _plot(trial, resB, resC, bias, plot)
