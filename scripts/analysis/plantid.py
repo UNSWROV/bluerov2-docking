@@ -59,7 +59,7 @@ def run(bag_dir: str, out_csv: str):
                 with contextlib.redirect_stdout(io.StringIO()):
                     r = loop.report(tr, a, b)
                 rows.append(dict(cell=lab.cell, arm=lab.arm, period=lab.period, mode=MODE[s], t_start=round(a, 1),
-                                 t_end=round(b, 1), **{k: round(float(v), 3) for k, v in r.items()}))
+                                 t_end=round(b, 1), **{k: round(float(v), 3) for k, v in r.items() if k != "period"}, fit_period=round(float(r["period"]), 2)))
                 print("window", lab.cell, MODE[s], f"{a:.0f}..{b:.0f}", f"gain {r['plant_gain']:.2f}/{r['plant_gain_broadband']:.2f}", flush=True)
         except Exception as e:  # noqa: BLE001
             print("skip", os.path.basename(bag), e)
