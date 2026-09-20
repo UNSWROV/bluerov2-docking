@@ -71,7 +71,13 @@ def fit_bag(path: str, axis: str = "y", cmd_topic: str = "/cmd_vel"):
     # odometry twist is body frame already; world position derivative rotated into body as a check
     v_body = np.array([getattr(m.twist.twist.linear, axis) for _, m in odo])
     t = np.arange(ot[0], ot[-1], 0.02)
-    u = np.interp(t, ct, cu) if len(ct) else np.zeros_like(t)
+    # the autopilot holds the last command between messages: zero-order hold, not linear
+    if len(ct):
+        idx = np.clip(np.searchsorted(ct, t, side="right") - 1, 0, len(ct) - 1)
+        u = cu[idx]
+        u[t < ct[0]] = 0.0
+    else:
+        u = np.zeros_like(t)
     v = np.interp(t, ot, v_body)
     fit = fit_first_order(t, u, v)
     print(f"{path.split('/')[-1]} axis {axis}: gain {fit.gain:.2f} m/s per unit, delay {fit.tau_s:.2f} s, "
