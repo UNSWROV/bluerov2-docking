@@ -15,7 +15,7 @@ import rclpy
 from geometry_msgs.msg import Vector3Stamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from scipy.spatial.transform import Rotation as R
 
 from perception.utils.nav_error import LEVELS, GaussMarkovBias, NavErrorParams
@@ -45,8 +45,11 @@ class NavErrorInjector(Node):
         self._gen = GaussMarkovBias(self._params) if self._params else None
         self._rng = np.random.default_rng((self._params.seed if self._params else 0) + 1)
         self._last_t = None
+        # RELIABLE so the TF relay's default (reliable) subscription accepts it; a
+        # reliable publisher also serves best-effort subscribers, the reverse does not.
+        pub_qos = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
         self._pub = self.create_publisher(
-            Odometry, self.get_parameter("output_topic").get_parameter_value().string_value, qos_profile_sensor_data
+            Odometry, self.get_parameter("output_topic").get_parameter_value().string_value, pub_qos
         )
         self._pub_bias = self.create_publisher(
             Vector3Stamped, self.get_parameter("bias_topic").get_parameter_value().string_value, 10
