@@ -42,6 +42,7 @@ TOPICS=(
   /control/fine_align/status              # fine gate: aligned, seated, phase
   /perception/dock_pose_filtered          # Kalman dock-pose estimate
   /perception/dock_pose_filtered/velocity # CV filter dock-velocity state (#36); needed to check velocity estimation
+  /dock/oracle_velocity                   # ground-truth dock velocity when feedforward_source:=oracle (#68)
   /perception/dock_pose_filtered/health   # filter health (WARMING_UP/HEALTHY/DEGRADED/STALE)
   /perception/dock_pose_measured          # raw fused measurement (pre-filter)
   /model/bluerov2_heavy/odometry          # ROV pose

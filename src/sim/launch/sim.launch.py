@@ -29,6 +29,18 @@ def generate_launch_description():
             "' == 'true' else '/cmd_vel'",
         ]
     )
+    # Feedforward source (#68): the oracle node runs and the controllers read its
+    # twist only when feedforward_source:=oracle (diagnostic arm D).
+    use_oracle = PythonExpression(
+        ["'", LaunchConfiguration("feedforward_source"), "' == 'oracle'"]
+    )
+    dock_velocity_topic = PythonExpression(
+        [
+            "'/dock/oracle_velocity' if '",
+            LaunchConfiguration("feedforward_source"),
+            "' == 'oracle' else '/perception/dock_pose_filtered/velocity'",
+        ]
+    )
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_docking_rviz", default_value="false"),
@@ -59,6 +71,9 @@ def generate_launch_description():
             DeclareLaunchArgument("process_noise_regime", default_value="sway"),
             # Sway-regime WNA density sigma_a; forwarded to aruco.launch.py (#36 trade study).
             DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
+            # Feedforward source: "filter" (the CV filter's velocity state) or "oracle"
+            # (ground-truth dock velocity, diagnostic arm D, #68).
+            DeclareLaunchArgument("feedforward_source", default_value="filter"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -155,6 +170,16 @@ def generate_launch_description():
                 condition=IfCondition(LaunchConfiguration("use_foxglove")),
                 output="screen",
             ),
+            # Oracle dock velocity (arm D): differentiates the ground-truth dock pose
+            # and feeds the controllers through the same twist interface.
+            Node(
+                package="perception",
+                executable="oracle_dock_velocity",
+                name="oracle_dock_velocity",
+                parameters=[{"use_sim_time": True}],
+                condition=IfCondition(use_oracle),
+                output="screen",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -167,6 +192,7 @@ def generate_launch_description():
                 launch_arguments={
                     "target_frame": "map",
                     "cmd_vel_topic": cmd_vel_topic,
+                    "dock_velocity_topic": dock_velocity_topic,
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),
@@ -179,6 +205,7 @@ def generate_launch_description():
                 launch_arguments={
                     "target_frame": "map",
                     "cmd_vel_topic": cmd_vel_topic,
+                    "dock_velocity_topic": dock_velocity_topic,
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),
