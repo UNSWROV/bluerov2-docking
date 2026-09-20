@@ -16,6 +16,7 @@ python3 -m analysis figure pdock RESULTS.csv OUT.png        # sweep-runner CSV (
 python3 -m analysis figure trajectory BAG OUT.png
 python3 -m analysis metrics BAG_DIR --out metrics.csv          # per-trial paper metrics
 python3 -m analysis replay BAG [--plot out.png] [--hold 1 --decay 1]   # offline filter replay, needs scipy >= 1.11
+python3 -m analysis navreplay BAG... [--seeds 3] [--plot out.png]   # arms B and C under injected navigation error
 python3 -m pytest analysis/tests
 ```
 
