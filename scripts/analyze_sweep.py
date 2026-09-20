@@ -13,7 +13,6 @@ If SWEEP_TAG is omitted, the newest sweep_*_results.csv in the bags dir is used.
 import argparse
 import glob
 import os
-import re
 import subprocess
 import sys
 
@@ -26,8 +25,7 @@ from rosbag2_py import SequentialReader, StorageOptions, ConverterOptions
 from rclpy.serialization import deserialize_message
 from interfaces.msg import DockingState, FineAlignStatus
 
-# bag dir = <tag>_<regime>_<dock>_p<period>_ph<phase>_<YYYYMMDD_HHMMSS>
-_RE = re.compile(r"_(sway|static)_(sway|static)_p([0-9.]+)_ph([0-9.]+)_(\d{8}_\d{6})$")
+from analysis.labels import parse_label
 _SN = {0: "COARSE", 1: "FINE", 2: "DOCKED", 3: "IDLE"}
 
 
@@ -89,15 +87,14 @@ def main():
     for bag in sorted(glob.glob(os.path.join(args.bags, f"{tag}_*"))):
         if not os.path.isdir(bag):
             continue
-        m = _RE.search(os.path.basename(bag))
-        if not m:
+        lab = parse_label(bag)
+        if lab is None:
             continue
-        regime, dock, period, phase, _ = m.groups()
         met = read_run(bag)
         if met is None:
             continue
-        runs.append(dict(regime=regime, dock=dock, period=float(period),
-                         phase=float(phase), **met))
+        runs.append(dict(regime=lab.arm, dock=lab.dock, period=lab.period,
+                         phase=lab.phase, **met))
 
     if not runs:
         sys.exit(f"no readable runs for tag {tag}")
