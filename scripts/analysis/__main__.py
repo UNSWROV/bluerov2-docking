@@ -5,8 +5,7 @@ import argparse
 import glob
 import os
 
-from . import figures, leak, loop, metrics, navreplay, replay, sweep, windows
-from . import figures, leak, loop, metrics, plantid, replay, sweep, windows
+from . import figures, leak, loop, metrics, navreplay, plantid, replay, stepfit, sweep, windows
 from .tracks import load_trial
 
 
@@ -21,6 +20,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("sweep"); p.add_argument("bag_dir"); p.add_argument("--out", default="sweep_summary.csv")
     p = sub.add_parser("metrics"); p.add_argument("bag_dir"); p.add_argument("--out", default="metrics.csv")
+    p = sub.add_parser("stepfit"); p.add_argument("bag"); p.add_argument("--axis", default="y"); p.add_argument("--cmd-topic", dest="cmd_topic", default="/cmd_vel")
     p = sub.add_parser("replay"); p.add_argument("bag"); p.add_argument("--plot"); p.add_argument("--hold", type=float, default=1.0); p.add_argument("--decay", type=float, default=1.0); p.add_argument("--regime", choices=["static", "sway"])
     p = sub.add_parser("navreplay"); p.add_argument("bags", nargs="+"); p.add_argument("--out", default="navreplay.csv"); p.add_argument("--plot"); p.add_argument("--seeds", type=int, default=1)
     p = sub.add_parser("plantid"); p.add_argument("bag_dir"); p.add_argument("--out", default="plantid.csv")
@@ -46,6 +46,8 @@ def main():
         windows.report(load_trial(_bag(a.bag)), "xyz".index(a.axis))
     elif a.cmd == "loop":
         loop.report(load_trial(_bag(a.bag)), a.t_start, a.t_end)
+    elif a.cmd == "stepfit":
+        stepfit.fit_bag(_bag(a.bag), a.axis, a.cmd_topic)
     elif a.cmd == "figure":
         if a.kind == "pdock":
             figures.pdock(a.src, a.out)
