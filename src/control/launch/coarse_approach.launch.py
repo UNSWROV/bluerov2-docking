@@ -15,6 +15,7 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "dock_velocity_topic",
                 default_value="/perception/dock_pose_filtered/velocity",
+            ),
             # open_loop (arms A, B, D) or velocity_loop (the fix arm, C)
             DeclareLaunchArgument("feedforward_mode", default_value="open_loop"),
             # navigation odometry the velocity loop closes on (the injector's
