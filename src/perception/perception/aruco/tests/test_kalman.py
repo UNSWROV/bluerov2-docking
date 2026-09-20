@@ -285,3 +285,22 @@ def test_velocity_covariance_shape_and_growth():
     before = np.trace(kf.velocity_covariance)
     kf.predict(0.5, make_process_noise(dt=0.5, regime="sway"))
     assert np.trace(kf.velocity_covariance) > before
+
+
+def test_decay_velocity_scales_the_velocity_state_and_keeps_the_covariance():
+    kf = DockPoseKalmanFilter()
+    kf.initialize(
+        np.array([5.0, 0.0, -1.5]),
+        np.array([0.0, 0.0, 0.0, 1.0]),
+        np.eye(6) * 1e-2,
+        velocity_std=0.2,
+    )
+    kf._velocity = np.array([0.0, 0.05, 0.0])
+    cov_before = kf.covariance.copy()
+    kf.decay_velocity(0.5)
+    assert np.allclose(kf.velocity, [0.0, 0.025, 0.0])
+    assert np.allclose(kf.covariance, cov_before)
+    kf.decay_velocity(2.0)   # factors above one are clipped, the state never grows
+    assert np.allclose(kf.velocity, [0.0, 0.025, 0.0])
+    kf.decay_velocity(0.0)
+    assert np.allclose(kf.velocity, 0.0)

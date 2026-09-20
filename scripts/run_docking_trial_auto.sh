@@ -32,16 +32,15 @@ DOCK="sway"; { [ "$PERIOD" = "0" ] || [ "${DOCK_STATIC:-0}" = "1" ]; } && DOCK="
 NAVTAG=""; [ "$NAV" != "none" ] && NAVTAG="_nav${NAV}"
 LABEL="${4:-auto}_${ARM}_${DOCK}_p${PERIOD}_ph${PHASE}${NAVTAG}"
 
-# Arm -> launch arguments. A, B and D exist (D needs feedforward_source from #68);
-# every arm passes the navigation-error level that #69 adds. Arm C (the fix, #67) has
-# no launch arguments yet. ros2 launch silently ignores unknown key:=value pairs, so
-# passing made-up ones would run arm B under a C label; refuse instead until the
-# fix arm lands, then put its arguments here (expected: a velocity-closed feedforward
-# switch and a stale velocity decay time constant).
+# Arm -> launch arguments. A reactive (static regime, no feedforward); B the original
+# open-loop feedforward; C the fix (#67): velocity-closed feedforward in the controllers
+# and a bounded velocity state in the filter; D the oracle (#68, feedforward_source).
+# Every arm passes the navigation-error level (#69). ros2 launch silently ignores
+# unknown key:=value pairs, so each argument here must exist in sim.launch.py.
 case "$ARM" in
   A) ARM_ARGS="process_noise_regime:=static" ;;
   B) ARM_ARGS="process_noise_regime:=sway" ;;
-  C) echo "arm C is not implemented yet: no launch arguments exist for the fix (#67), refusing to run it as arm B"; exit 2 ;;
+  C) ARM_ARGS="process_noise_regime:=sway feedforward_mode:=velocity_loop stale_velocity_hold_s:=1.0 stale_velocity_decay_s:=1.0" ;;
   D) ARM_ARGS="process_noise_regime:=sway feedforward_source:=oracle" ;;
   *) echo "unknown arm: $ARM (A|B|C|D)"; exit 2 ;;
 esac

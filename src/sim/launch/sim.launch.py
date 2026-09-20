@@ -81,6 +81,14 @@ def generate_launch_description():
             # Filter regime, forwarded to aruco.launch.py. "sway" = CV filter + ff
             # (method); "static" = velocity pinned, ff off (baseline). For ablation.
             DeclareLaunchArgument("process_noise_regime", default_value="sway"),
+            # the fix arm (C): velocity-closed feedforward in the controllers and a
+            # bounded velocity state in the filter; defaults are the original method
+            DeclareLaunchArgument("feedforward_mode", default_value="open_loop"),
+            DeclareLaunchArgument("stale_velocity_hold_s", default_value="0.0"),
+            DeclareLaunchArgument("stale_velocity_decay_s", default_value="1.0"),
+            DeclareLaunchArgument(
+                "robot_odom_topic", default_value="/model/bluerov2_heavy/odometry"
+            ),
             # Sway-regime WNA density sigma_a; forwarded to aruco.launch.py (#36 trade study).
             DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
             # Feedforward source: "filter" (the CV filter's velocity state) or "oracle"
@@ -181,6 +189,8 @@ def generate_launch_description():
                     "target_frame": "map",
                     "process_noise_regime": LaunchConfiguration("process_noise_regime"),
                     "sway_sigma_a": LaunchConfiguration("sway_sigma_a"),
+                    "stale_velocity_hold_s": LaunchConfiguration("stale_velocity_hold_s"),
+                    "stale_velocity_decay_s": LaunchConfiguration("stale_velocity_decay_s"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_aruco")),
             ),
@@ -222,6 +232,8 @@ def generate_launch_description():
                     "target_frame": "map",
                     "cmd_vel_topic": cmd_vel_topic,
                     "dock_velocity_topic": dock_velocity_topic,
+                    "feedforward_mode": LaunchConfiguration("feedforward_mode"),
+                    "robot_odom_topic": LaunchConfiguration("robot_odom_topic"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),
@@ -235,6 +247,8 @@ def generate_launch_description():
                     "target_frame": "map",
                     "cmd_vel_topic": cmd_vel_topic,
                     "dock_velocity_topic": dock_velocity_topic,
+                    "feedforward_mode": LaunchConfiguration("feedforward_mode"),
+                    "robot_odom_topic": LaunchConfiguration("robot_odom_topic"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),

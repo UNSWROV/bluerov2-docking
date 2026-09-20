@@ -29,6 +29,15 @@ from control.pbvs import (
 from control import guidance as guidance_lib
 from control import health_gate as hg
 from interfaces.msg import FilterHealth, CoarseApproachStatus, DockingState
+from nav_msgs.msg import Odometry
+
+from control.velocity_loop import (
+    MODES,
+    VELOCITY_LOOP,
+    VelocityLoop,
+    VelocityLoopParams,
+    effort_from_setpoint,
+)
 
 # Low-pass on the standoff-relative speed feeding the velocity-match handoff gate. The
 # single-step derivative of even the smoothed dock pose is noisy at 20 Hz; this EMA
@@ -84,6 +93,26 @@ class CoarseApproach(Node):
             "vel_match_m_s",
         ):
             self.declare_parameter(name, ptype.DOUBLE)
+        # Feedforward mode (the fix arm, rev 2026-09-21): open_loop adds the scaled
+        # dock velocity to the effort command; velocity_loop treats feedback plus
+        # dock velocity as a body-velocity setpoint and closes it on the navigation
+        # velocity with a PI, so the plant gain no longer sets the vehicle amplitude.
+        self.declare_parameter("feedforward_mode", "open_loop")
+        self.declare_parameter("vloop_kp", 0.30)
+        self.declare_parameter("vloop_ki", 0.74)
+        self.declare_parameter("robot_odom_topic", "/model/bluerov2_heavy/odometry")
+        mode = self.get_parameter("feedforward_mode").get_parameter_value().string_value
+        if mode not in MODES:
+            raise ValueError(f"feedforward_mode must be one of {MODES}, got {mode!r}")
+        self._velocity_loop_on = mode == VELOCITY_LOOP
+        self._vloop = VelocityLoop(
+            VelocityLoopParams(
+                kp=self.get_parameter("vloop_kp").get_parameter_value().double_value,
+                ki=self.get_parameter("vloop_ki").get_parameter_value().double_value,
+            )
+        )
+        self._latest_odom: Odometry | None = None
+        self._latest_odom_t: float | None = None
 
         # gains are read once here; tolerances are read live each tick
         self._controller = PbvsController(self._params())
@@ -131,6 +160,12 @@ class CoarseApproach(Node):
         )
         self.create_subscription(
             DockingState, "/docking/state", self._on_state, qos
+        )
+        self.create_subscription(
+            Odometry,
+            self.get_parameter("robot_odom_topic").get_parameter_value().string_value,
+            self._on_odom,
+            qos,
         )
 
         rate = self.get_parameter("control_rate_hz").get_parameter_value().double_value
@@ -186,6 +221,25 @@ class CoarseApproach(Node):
     def _on_state(self, msg: DockingState) -> None:
         self._latest_state = int(msg.state)
 
+    def _on_odom(self, msg: Odometry) -> None:
+        self._latest_odom = msg
+        self._latest_odom_t = self.get_clock().now().nanoseconds * 1e-9
+
+    def _body_velocity(self) -> np.ndarray | None:
+        """Navigation linear velocity in the body frame (Odometry twist is in
+        child_frame_id = base_link), or None when missing or older than the twist
+        age limit."""
+        if self._latest_odom is None or self._latest_odom_t is None:
+            return None
+        age = self.get_clock().now().nanoseconds * 1e-9 - self._latest_odom_t
+        max_age = (
+            self.get_parameter("max_twist_age_s").get_parameter_value().double_value
+        )
+        if age < 0.0 or age > max_age:
+            return None
+        lin = self._latest_odom.twist.twist.linear
+        return np.array([lin.x, lin.y, lin.z])
+
     def _pose_too_old(self) -> bool:
         if self._latest_pose_t is None:
             return True
@@ -217,6 +271,7 @@ class CoarseApproach(Node):
     def _block(self) -> None:
         # reset clears controller state so a resumed approach has no stale jump
         self._controller.reset()
+        self._vloop.reset()
         self._ready_counter = 0
         self._ready = False
         self._prev_rel_pos_body = None
@@ -346,7 +401,10 @@ class CoarseApproach(Node):
             # ff_velocity_gain converts the dock's physical velocity into cmd_vel units
             # (cmd_vel is effort-like, not a velocity servo), so the ff produces the dock
             # velocity at the plant output instead of over-driving by the plant gain.
-            ff_scale = gd("ff_velocity_gain") * ff_authority_ramp(
+            # In velocity_loop mode the dock velocity is a physical setpoint, so the
+            # gain conversion does not apply; only the distance ramp remains.
+            ff_gain = 1.0 if self._velocity_loop_on else gd("ff_velocity_gain")
+            ff_scale = ff_gain * ff_authority_ramp(
                 g.range_to_standoff_m, gd("ff_ramp_far_m"), gd("ff_ramp_near_m")
             )
             ff_vel_body = ff_scale * v_body
@@ -364,10 +422,21 @@ class CoarseApproach(Node):
         )
         surge = max(-surge_cap, min(cmd.surge, surge_cap))
 
+        lin = np.array([surge, cmd.sway, cmd.heave])
+        if self._velocity_loop_on:
+            v_meas = self._body_velocity()
+            if v_meas is None:
+                self.get_logger().warn(
+                    "velocity loop: no navigation velocity, passing the setpoint "
+                    "through as effort",
+                    throttle_duration_sec=2.0,
+                )
+            lin = effort_from_setpoint(self._vloop, lin, v_meas, self._dt)
+
         twist = Twist()
-        twist.linear.x = surge * gate.gain_scale
-        twist.linear.y = cmd.sway * gate.gain_scale
-        twist.linear.z = cmd.heave * gate.gain_scale
+        twist.linear.x = float(lin[0]) * gate.gain_scale
+        twist.linear.y = float(lin[1]) * gate.gain_scale
+        twist.linear.z = float(lin[2]) * gate.gain_scale
         twist.angular.z = cmd.yaw_rate * gate.gain_scale
         self._pub_cmd.publish(twist)
 
