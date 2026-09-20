@@ -16,7 +16,7 @@ def _trial(veh_xyz, states, dock_xyz=(5.0, 0.0, -1.5), t=None, health=None, vel=
     tm = np.linspace(t[0], t[-1], n) if meas_t is None else meas_t
     p_cam = np.zeros((len(tm), 3))
     p_cam[:, 2] = np.linalg.norm(veh.pos(tm) - dock.pos(tm), axis=1)   # optical axis points at the dock, roughly
-    return Trial(path="synthetic", t_meas=tm, p_cam=p_cam, n_markers=np.full(len(tm), 3), marker_ids=[(301,)] * len(tm),
+    return Trial(path="synthetic", t_meas=tm, p_cam=p_cam, q_cam=np.tile([0, 0, 0, 1], (len(tm), 1)), cov=np.tile(np.eye(6) * 1e-4, (len(tm), 1, 1)), n_markers=np.full(len(tm), 3), marker_ids=[(301,)] * len(tm),
                  odom=veh, tf=veh, dock=dock, filt=dock, t_vel=t, vel=np.zeros((len(t), 3)) if vel is None else vel,
                  t_health=t, health=np.full(len(t), 1) if health is None else health, t_cmd=t, cmd=np.zeros((len(t), 3)),
                  states=states, rtf=1.0)

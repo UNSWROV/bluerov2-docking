@@ -45,7 +45,9 @@ TOPICS=(
   /dock/oracle_velocity                   # ground-truth dock velocity when feedforward_source:=oracle (#68)
   /perception/dock_pose_filtered/health   # filter health (WARMING_UP/HEALTHY/DEGRADED/STALE)
   /perception/dock_pose_measured          # raw fused measurement (pre-filter)
-  /model/bluerov2_heavy/odometry          # ROV pose
+  /model/bluerov2_heavy/odometry          # ROV pose (ground truth)
+  /nav/odometry                           # ROV pose as the nodes see it when navigation error is injected (#69)
+  /nav/error_bias                         # injected velocity bias, world frame
   /tf
   /tf_static
   /dock/ground_truth/pose                 # true dock pose; empty until the ros_gz bridge is added
