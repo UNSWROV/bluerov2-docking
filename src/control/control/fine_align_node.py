@@ -26,6 +26,16 @@ from control import guidance as guidance_lib
 from control import health_gate as hg
 from control import fine_guidance as fg
 from interfaces.msg import FilterHealth, FineAlignStatus, DockingState
+import numpy as np
+from nav_msgs.msg import Odometry
+
+from control.velocity_loop import (
+    MODES,
+    VELOCITY_LOOP,
+    VelocityLoop,
+    VelocityLoopParams,
+    effort_from_setpoint,
+)
 
 
 class FineAlign(Node):
@@ -76,6 +86,23 @@ class FineAlign(Node):
             "ff_vel_max",
         ):
             self.declare_parameter(name, ptype.DOUBLE)
+        # Feedforward mode (the fix arm, rev 2026-09-21); see coarse_approach_node.
+        self.declare_parameter("feedforward_mode", "open_loop")
+        self.declare_parameter("vloop_kp", 0.30)
+        self.declare_parameter("vloop_ki", 0.74)
+        self.declare_parameter("robot_odom_topic", "/model/bluerov2_heavy/odometry")
+        mode = self.get_parameter("feedforward_mode").get_parameter_value().string_value
+        if mode not in MODES:
+            raise ValueError(f"feedforward_mode must be one of {MODES}, got {mode!r}")
+        self._velocity_loop_on = mode == VELOCITY_LOOP
+        self._vloop = VelocityLoop(
+            VelocityLoopParams(
+                kp=self.get_parameter("vloop_kp").get_parameter_value().double_value,
+                ki=self.get_parameter("vloop_ki").get_parameter_value().double_value,
+            )
+        )
+        self._latest_odom: Odometry | None = None
+        self._latest_odom_t: float | None = None
 
         self._controller = PbvsController(self._params())
         self._seated_counter = 0
@@ -115,6 +142,12 @@ class FineAlign(Node):
             FilterHealth, "/perception/dock_pose_filtered/health", self._on_health, qos
         )
         self.create_subscription(DockingState, "/docking/state", self._on_state, qos)
+        self.create_subscription(
+            Odometry,
+            self.get_parameter("robot_odom_topic").get_parameter_value().string_value,
+            self._on_odom,
+            qos,
+        )
 
         rate = self.get_parameter("control_rate_hz").get_parameter_value().double_value
         self._dt = 1.0 / rate
@@ -172,6 +205,25 @@ class FineAlign(Node):
     def _on_state(self, msg: DockingState) -> None:
         self._latest_state = int(msg.state)
 
+    def _on_odom(self, msg: Odometry) -> None:
+        self._latest_odom = msg
+        self._latest_odom_t = self.get_clock().now().nanoseconds * 1e-9
+
+    def _body_velocity(self) -> np.ndarray | None:
+        """Navigation linear velocity in the body frame (Odometry twist is in
+        child_frame_id = base_link), or None when missing or older than the twist
+        age limit."""
+        if self._latest_odom is None or self._latest_odom_t is None:
+            return None
+        age = self.get_clock().now().nanoseconds * 1e-9 - self._latest_odom_t
+        max_age = (
+            self.get_parameter("max_twist_age_s").get_parameter_value().double_value
+        )
+        if age < 0.0 or age > max_age:
+            return None
+        lin = self._latest_odom.twist.twist.linear
+        return np.array([lin.x, lin.y, lin.z])
+
     def _pose_too_old(self) -> bool:
         if self._latest_pose_t is None:
             return True
@@ -203,6 +255,7 @@ class FineAlign(Node):
     def _block(self) -> None:
         # reset clears controller state so a resumed approach has no stale jump
         self._controller.reset()
+        self._vloop.reset()
         self._seated_counter = 0
         self._seated = False
         self._publish_zero(FineAlignStatus.BLOCKED)
@@ -308,10 +361,21 @@ class FineAlign(Node):
         )
         surge = max(-surge_cap, min(cmd.surge, surge_cap))
 
+        lin = np.array([surge, cmd.sway, cmd.heave])
+        if self._velocity_loop_on:
+            v_meas = self._body_velocity()
+            if v_meas is None:
+                self.get_logger().warn(
+                    "velocity loop: no navigation velocity, passing the setpoint "
+                    "through as effort",
+                    throttle_duration_sec=2.0,
+                )
+            lin = effort_from_setpoint(self._vloop, lin, v_meas, self._dt)
+
         twist = Twist()
-        twist.linear.x = surge * gate.gain_scale
-        twist.linear.y = cmd.sway * gate.gain_scale
-        twist.linear.z = cmd.heave * gate.gain_scale
+        twist.linear.x = float(lin[0]) * gate.gain_scale
+        twist.linear.y = float(lin[1]) * gate.gain_scale
+        twist.linear.z = float(lin[2]) * gate.gain_scale
         twist.angular.z = cmd.yaw_rate * gate.gain_scale
         self._pub_cmd.publish(twist)
 
