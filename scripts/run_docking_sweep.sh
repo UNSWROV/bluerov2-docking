@@ -39,6 +39,18 @@ phases_for(){  # period -> space-separated start phases
 }
 
 log(){ echo "[sweep $(date +%H:%M:%S)] $*"; }
+
+# Stopping the sweep by pid (kill <pid>, the realistic unattended stop) must not
+# orphan the running cell: forward the signal to the child driver and wait for its
+# teardown before leaving, otherwise gz, ardusub and the recorder keep running and
+# contaminate the next launch.
+CHILD=""
+on_signal(){
+  log "interrupted, stopping the running cell"
+  if [ -n "$CHILD" ]; then kill -TERM "$CHILD" 2>/dev/null; wait "$CHILD" 2>/dev/null; fi
+  exit 130
+}
+trap on_signal INT TERM
 if [ "${DRY_RUN:-0}" != "1" ]; then
   mkdir -p "$WS/bags"
   [ -f "$CSV" ] || echo "label,arm,dock,period,phase,nav,outcome,bag" > "$CSV"
@@ -59,10 +71,16 @@ run_one(){  # arm nav dock period phase
   elif [ -n "$existing" ]; then
     log "RERUN $label (incomplete bag $(basename "$existing"), no metadata.yaml)"
   fi
-  log "=== RUN $label ==="
+  log "=== RUN $label (log $WS/bags/${label}.log) ==="
   local extra=(); [ "$dock" = "static" ] && extra=(DOCK_STATIC=1)
-  local out; out=$(env "${extra[@]}" "$AUTO" "$period" "$arm" "$phase" "$TAG" "$nav" 2>&1 \
-                   | tee /dev/stderr | grep "^RESULT" | tail -1)
+  # The per-cell driver runs as a background child in this script's process group
+  # (no setsid here) so the INT/TERM trap below can reach it by pid; the driver's own
+  # trap then tears down the sim stack it started under setsid.
+  env "${extra[@]}" "$AUTO" "$period" "$arm" "$phase" "$TAG" "$nav" > "$WS/bags/${label}.log" 2>&1 &
+  CHILD=$!
+  wait "$CHILD"
+  CHILD=""
+  local out; out=$(grep "^RESULT" "$WS/bags/${label}.log" | tail -1)
   local outcome; outcome=$(awk '{print $3}' <<< "$out"); outcome=${outcome:-NORUN}
   local bag; bag=$(ls -dt "$WS"/bags/"${label}"_* 2>/dev/null | head -1)
   echo "${label},${arm},${dock},${period},${phase},${nav},${outcome},$(basename "${bag:-none}")" >> "$CSV"
