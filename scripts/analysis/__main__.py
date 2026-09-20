@@ -5,6 +5,7 @@ import argparse
 import glob
 import os
 
+from . import figures, leak, loop, metrics, sweep, windows
 from . import figures, leak, loop, sweep, windows
 from .tracks import load_trial
 
@@ -19,6 +20,7 @@ def main():
     ap = argparse.ArgumentParser(prog="analysis")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("sweep"); p.add_argument("bag_dir"); p.add_argument("--out", default="sweep_summary.csv")
+    p = sub.add_parser("metrics"); p.add_argument("bag_dir"); p.add_argument("--out", default="metrics.csv")
     p = sub.add_parser("leak"); p.add_argument("bag"); p.add_argument("--plot"); p.add_argument("--axis", default="y")
     p = sub.add_parser("windows"); p.add_argument("bag"); p.add_argument("--axis", default="y")
     p = sub.add_parser("loop"); p.add_argument("bag"); p.add_argument("t_start", type=float); p.add_argument("t_end", type=float)
@@ -27,6 +29,8 @@ def main():
     a = ap.parse_args()
     if a.cmd == "sweep":
         sweep.run(a.bag_dir, a.out)
+    elif a.cmd == "metrics":
+        metrics.run(a.bag_dir, a.out)
     elif a.cmd == "leak":
         leak.report(load_trial(_bag(a.bag)), "xyz".index(a.axis), a.plot)
     elif a.cmd == "windows":
