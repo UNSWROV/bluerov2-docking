@@ -55,6 +55,11 @@ SWAY_AMP="${SWAY_AMP:-0.1}"
 READY_TIMEOUT="${READY_TIMEOUT:-150}"   # sim-seconds for the filter to initialise
 DOCK_TIMEOUT="${DOCK_TIMEOUT:-200}"     # sim-seconds to reach DOCKED before giving up
 WALL_GUARD="${WALL_GUARD:-4}"
+# A launch occasionally stalls before the simulator starts stepping (no /clock at all,
+# the GUI waiting for the world list, ArduSub waiting for the physics backend); seen
+# once in ten launches on 2026-09-20. Relaunch the stack rather than lose the cell.
+STARTUP_WALL="${STARTUP_WALL:-60}"          # wall seconds for /clock to appear and advance
+LAUNCH_ATTEMPTS="${LAUNCH_ATTEMPTS:-2}"
 WS="${WS:-/home/ubuntu/ws_docking}"
 REC="$WS/src/bluerov2-docking/scripts/record_docking_trial.sh"
 LAUNCH_PID=""
@@ -118,12 +123,38 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   echo "DRY $LABEL: ros2 launch sim sim.launch.py use_control:=true $ARM_ARGS ${EXTRA_LAUNCH_ARGS:-} (dock ${DOCK_SWAY_ENABLED:-} period ${DOCK_SWAY_PERIOD:-})"
   echo "RESULT $LABEL DRYRUN"; exit 0
 fi
-log "launching sim (arm=$ARM nav=$NAV) -> /tmp/${LABEL}.log"
-setsid ros2 launch sim sim.launch.py \
-    use_control:=true use_deadman:=false use_aruco:=true use_mock_led:=true \
-    use_docking_rviz:=false $ARM_ARGS ${EXTRA_LAUNCH_ARGS:-} \
-    > "/tmp/${LABEL}.log" 2>&1 &
-LAUNCH_PID=$!
+launch_stack(){
+  setsid ros2 launch sim sim.launch.py \
+      use_control:=true use_deadman:=false use_aruco:=true use_mock_led:=true \
+      use_docking_rviz:=false $ARM_ARGS ${EXTRA_LAUNCH_ARGS:-} \
+      > "/tmp/${LABEL}.log" 2>&1 &
+  LAUNCH_PID=$!
+}
+# true once /clock exists and has advanced, false if it has not within STARTUP_WALL
+sim_stepping(){
+  local t0=$SECONDS first="" now
+  while [ $((SECONDS - t0)) -lt "$STARTUP_WALL" ]; do
+    now=$(sim_now)
+    if [ -n "$now" ]; then
+      [ -z "$first" ] && first=$now
+      [ "$now" -gt "$first" ] && return 0
+    fi
+    sleep 3
+  done
+  return 1
+}
+attempt=1
+while :; do
+  log "launching sim (arm=$ARM nav=$NAV, attempt $attempt of $LAUNCH_ATTEMPTS) -> /tmp/${LABEL}.log"
+  launch_stack
+  sim_stepping && break
+  log "simulator never started stepping within ${STARTUP_WALL}s wall"
+  if [ "$attempt" -ge "$LAUNCH_ATTEMPTS" ]; then
+    log "giving up on this cell"; teardown; echo "RESULT $LABEL STALLED"; exit 2
+  fi
+  cp "/tmp/${LABEL}.log" "/tmp/${LABEL}.stalled${attempt}.log"
+  teardown; attempt=$((attempt + 1))
+done
 
 # --- wait for readiness: the filter has INITIALIZED, i.e. it is publishing a filtered
 # pose (it stays silent while WARMING_UP). Coarse drives on DEGRADED too, so waiting
