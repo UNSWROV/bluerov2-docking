@@ -8,9 +8,11 @@ interfaces/DockPoseMeasurement type therefore works without a built workspace.
 """
 from __future__ import annotations
 
+import struct
 import sys
 
 import numpy as np
+from mcap.exceptions import McapError
 from mcap.records import Channel, Chunk, Message, Schema
 from mcap.stream_reader import StreamReader, breakup_chunk
 from mcap_ros2.decoder import DecoderFactory
@@ -46,8 +48,9 @@ def read_topics(path, topics):
                         handle(inner)
                 else:
                     handle(rec)
-    except Exception as e:  # noqa: BLE001
-        print(f"[bagio] stopped at truncated tail: {type(e).__name__}: {e}", file=sys.stderr)
+    except (struct.error, EOFError, McapError) as e:
+        n = sum(len(v) for v in out.values())
+        print(f"[bagio] stopped at truncated tail after {n} messages: {type(e).__name__}: {e}", file=sys.stderr)
     return out
 
 
