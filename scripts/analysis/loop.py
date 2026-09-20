@@ -12,14 +12,22 @@ def _fit(g, y, w):
     return float(np.hypot(*c)), float(np.degrees(np.arctan2(c[1], c[0])))
 
 
-def report(trial: Trial, a: float, b: float, axis: int = 1, ff_gain: float = 0.6):
-    """Window [a, b] in sim time relative to the first measurement."""
+def report(trial: Trial, a: float, b: float, axis: int = 1, ff_gain: float = 0.6,
+           period: float | None = None, verbose: bool = True):
+    """Window [a, b] in sim time relative to the first measurement.
+
+    `period` is the dock sway period when known (from the trial label); the FFT
+    fallback has a bin resolution of (b - a) / k and mis-fits the frequency
+    whenever the window is not a whole number of periods.
+    """
     t0 = trial.t0
     g = np.arange(t0 + a, t0 + b, 0.02)
     dock = trial.dock.pos(g)[:, axis]; veh = trial.odom.pos(g)[:, axis]
-    dockc = dock - dock.mean()
-    spec = np.abs(np.fft.rfft(dockc)); k = np.argmax(spec[1:]) + 1
-    period = (b - a) / k; w = 2 * np.pi / period
+    if period is None:
+        dockc = dock - dock.mean()
+        spec = np.abs(np.fft.rfft(dockc)); k = np.argmax(spec[1:]) + 1
+        period = (b - a) / k
+    w = 2 * np.pi / period
     amp_d, ph_d = _fit(g, dock, w); amp_v, ph_v = _fit(g, veh, w)
     dv = trial.dock.vel(g)[:, axis]; ev = np.interp(g, trial.t_vel, trial.vel[:, axis])
     vv = trial.odom.vel(g)[:, axis]
@@ -33,7 +41,9 @@ def report(trial: Trial, a: float, b: float, axis: int = 1, ff_gain: float = 0.6
                plant_gain=amp_vv / amp_c if amp_c > 0 else float("nan"),
                plant_gain_broadband=float(np.std(vv) / np.std(cy)) if np.std(cy) > 0 else float("nan"),
                plant_lag_s=lag_deg / 360 * period)
-    print(f"window {a:.0f}..{b:.0f} s, dock period fit {period:.2f} s")
+    if not verbose:
+        return out
+    print(f"window {a:.0f}..{b:.0f} s, dock period {period:.2f} s")
     print(f"dock amp {amp_d*100:.1f} cm, vehicle amp {amp_v*100:.1f} cm, ratio {out['ratio']:.2f}, "
           f"vehicle lags dock by {out['veh_phase_deg']:.0f} deg")
     print(f"velocity amps: dock {out['dock_vel_amp']*100:.1f} cm/s, estimate {out['est_vel_amp']*100:.1f} cm/s "

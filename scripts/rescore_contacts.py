@@ -71,7 +71,7 @@ for b in sorted(glob.glob(os.path.join(BAGS, TAG + "_*"))):
     if not os.path.isdir(b):
         continue
     lab = parse_label(b)
-    if lab is None or lab.dock != "sway" and lab.period != 0:
+    if lab is None or (lab.dock != "sway" and lab.period != 0):
         continue
     try:
         out, docked, io, iv, co, cv, pc = score(b)
