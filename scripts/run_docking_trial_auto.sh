@@ -73,14 +73,15 @@ sim_now(){ timeout 3 ros2 topic echo /clock --once 2>/dev/null | awk '/^  sec:/{
 # since $2 only while /clock has never been seen ($1 empty); once the clock exists a
 # single failed read (ros2 topic echo can exceed its timeout under load) must not
 # count as wall time, so the last good reading is repeated instead.
-LAST_SIM_ELAPSED=0
+# Sets SIM_ELAPSED rather than printing it: called inside $(...) the update to the
+# last good reading would be lost in the subshell.
+SIM_ELAPSED=0
 sim_elapsed(){
   local now; now=$(sim_now)
   if [ -n "$1" ]; then
-    [ -n "$now" ] && LAST_SIM_ELAPSED=$((now - $1))
-    echo "$LAST_SIM_ELAPSED"
+    [ -n "$now" ] && SIM_ELAPSED=$((now - $1))
   else
-    echo $((SECONDS - $2))
+    SIM_ELAPSED=$((SECONDS - $2))
   fi
 }
 pgid_of(){ ps -o pgid= -p "$1" 2>/dev/null | tr -d ' '; }
@@ -176,10 +177,10 @@ done
 # Heartbeat logs the health status (0 WARMING_UP, 1 HEALTHY, 2 DEGRADED, 3 STALE) so a
 # genuine stuck-at-1-marker case (status pinned 0) is distinguishable from slow warmup.
 log "waiting for filter to initialize (filtered pose flowing; <=${READY_TIMEOUT}s sim, wall guard $((READY_TIMEOUT * WALL_GUARD))s)"
-ready=0; t0=$SECONDS; last=0; s0=""; LAST_SIM_ELAPSED=0
+ready=0; t0=$SECONDS; last=0; s0=""; SIM_ELAPSED=0
 while [ $((SECONDS - t0)) -lt $((READY_TIMEOUT * WALL_GUARD)) ]; do
   [ -z "$s0" ] && s0=$(sim_now)   # the clock starts with the simulator, some seconds after launch
-  [ "$(sim_elapsed "$s0" "$t0")" -ge "$READY_TIMEOUT" ] && break
+  sim_elapsed "$s0" "$t0"; [ "$SIM_ELAPSED" -ge "$READY_TIMEOUT" ] && break
   if timeout 4 ros2 topic echo /perception/dock_pose_filtered --once \
        --qos-reliability best_effort 2>/dev/null | grep -q "position:"; then
     ready=1; break
@@ -187,13 +188,13 @@ while [ $((SECONDS - t0)) -lt $((READY_TIMEOUT * WALL_GUARD)) ]; do
   if [ $((SECONDS - last)) -ge 15 ]; then
     h=$(timeout 3 ros2 topic echo /perception/dock_pose_filtered/health --once \
          --qos-reliability best_effort 2>/dev/null | grep -oP "status: \K\d+")
-    log "  ...warming up (health=${h:-?}; 0=WARMING 1=HEALTHY 2=DEGRADED 3=STALE) sim t+$(sim_elapsed "$s0" "$t0")s, wall t+$((SECONDS - t0))s"
+    log "  ...warming up (health=${h:-?}; 0=WARMING 1=HEALTHY 2=DEGRADED 3=STALE) sim t+${SIM_ELAPSED}s, wall t+$((SECONDS - t0))s"
     last=$SECONDS
   fi
   sleep 3
 done
 if [ "$ready" != "1" ]; then log "NOT INITIALIZED within ${READY_TIMEOUT}s sim (wall $((SECONDS - t0))s) -> abort"; teardown; exit 2; fi
-log "filter initialized at sim t+$(sim_elapsed "$s0" "$t0")s, wall t+$((SECONDS - t0))s"
+sim_elapsed "$s0" "$t0"; log "filter initialized at sim t+${SIM_ELAPSED}s, wall t+$((SECONDS - t0))s"
 
 # --- wait for ardusub_init to finish applying the default flight mode BEFORE engaging.
 # It retries flight_mode:=POSHOLD until it sticks; if the FSM's COARSE-entry ALT_HOLD
@@ -224,14 +225,14 @@ ENGAGE_PID=$!
 
 # --- wait for DOCKED (or timeout) ---
 log "waiting for DOCKED (<=${DOCK_TIMEOUT}s sim, wall guard $((DOCK_TIMEOUT * WALL_GUARD))s)"
-outcome="TIMEOUT"; t0=$SECONDS; s0=$(sim_now); LAST_SIM_ELAPSED=0
+outcome="TIMEOUT"; t0=$SECONDS; s0=$(sim_now); SIM_ELAPSED=0
 while [ $((SECONDS - t0)) -lt $((DOCK_TIMEOUT * WALL_GUARD)) ]; do
-  [ "$(sim_elapsed "$s0" "$t0")" -ge "$DOCK_TIMEOUT" ] && break
+  sim_elapsed "$s0" "$t0"; [ "$SIM_ELAPSED" -ge "$DOCK_TIMEOUT" ] && break
   s=$(timeout 4 ros2 topic echo /docking/state --once 2>/dev/null | grep -oP "label: \K\w+")
   if [ "$s" = "DOCKED" ]; then outcome="DOCKED"; break; fi
   sleep 2
 done
-el=$(sim_elapsed "$s0" "$t0"); wall=$((SECONDS - t0))
+sim_elapsed "$s0" "$t0"; el=$SIM_ELAPSED; wall=$((SECONDS - t0))
 [ "$wall" -ge $((DOCK_TIMEOUT * WALL_GUARD)) ] && [ "$el" -lt "$DOCK_TIMEOUT" ] && outcome="STALLED"
 log "outcome: $outcome at sim t+${el}s, wall t+${wall}s (real-time factor $(awk "BEGIN{printf \"%.2f\", ($wall>0)?$el/$wall:0}"))"
 
