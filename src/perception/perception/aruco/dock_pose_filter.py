@@ -80,8 +80,12 @@ class DockPoseFilter(Node):
             self.get_parameter("max_dock_speed_m_s").get_parameter_value().double_value
         )
         self._kf = DockPoseKalmanFilter(max_speed=_max_speed if _max_speed > 0 else None)
-        self._last_update_wall_t: float | None = None
-        self._init_wall_t: float = time.monotonic()
+        # Estimator timing runs on the node clock (sim time under use_sim_time, wall
+        # time on hardware) so predict steps, update ages and health do not scale
+        # with the simulator's real-time factor. Only the TF-connectivity startup
+        # grace stays on the wall clock, since it measures process start-up.
+        self._last_update_t: float | None = None
+        self._init_t: float | None = None
         self._node_start_t: float = time.monotonic()
 
         self._tf_buffer = Buffer()
@@ -124,6 +128,7 @@ class DockPoseFilter(Node):
 
         rate = self.get_parameter("predict_rate_hz").get_parameter_value().double_value
         self._last_predict_t: float | None = None
+        self._max_predict_dt: float = 10.0 / rate
         self.create_timer(1.0 / rate, self._tick)
 
         self.get_logger().info("dock_pose_filter ready")
@@ -224,7 +229,8 @@ class DockPoseFilter(Node):
             )
             velocity_std = 0.2 if regime == "sway" else 0.0
             self._kf.initialize(pos, quat, cov * inflation, velocity_std)
-            self._last_update_wall_t = time.monotonic()
+            self._init_t = self._now()
+            self._last_update_t = self._init_t
             return
 
         chi2 = (
@@ -236,7 +242,7 @@ class DockPoseFilter(Node):
             pos, quat, meas_cov_pos, meas_cov_rot, gate_chi2=chi2
         )
         if accepted:
-            self._last_update_wall_t = time.monotonic()
+            self._last_update_t = self._now()
         else:
             innov = self._kf.last_innovation
             self.get_logger().warn(
@@ -264,14 +270,24 @@ class DockPoseFilter(Node):
         out.pose.covariance = msg.pose.covariance
         return out
 
+    def _now(self) -> float:
+        """Node clock in seconds: sim time when use_sim_time is set, else wall time."""
+        return self.get_clock().now().nanoseconds * 1e-9
+
     def _tick(self) -> None:
-        now = time.monotonic()
+        now = self._now()
         if self._last_predict_t is None:
             self._last_predict_t = now
             self._publish_health()
             return
         dt = now - self._last_predict_t
         self._last_predict_t = now
+        if dt <= 0.0:
+            # sim clock paused or not yet advancing: nothing to propagate
+            self._publish_health()
+            return
+        # a clock jump (bag restart, sim reset) must not integrate a huge step
+        dt = min(dt, self._max_predict_dt)
 
         if self._kf.is_initialized:
             q = make_process_noise(
@@ -338,12 +354,14 @@ class DockPoseFilter(Node):
         self._publish_health()
 
     def _publish_health(self) -> None:
-        now = time.monotonic()
-        since_init = 0.0 if not self._kf.is_initialized else (now - self._init_wall_t)
-        if self._last_update_wall_t is None:
+        now = self._now()
+        # classify_health treats exactly 0.0 as not yet initialised; on a sim clock the
+        # first health after init can land on the same tick, so report a hair above zero
+        since_init = 0.0 if self._init_t is None else max(1e-6, now - self._init_t)
+        if self._last_update_t is None:
             since_update = math.inf
         else:
-            since_update = now - self._last_update_wall_t
+            since_update = max(0.0, now - self._last_update_t)
         if self._kf.is_initialized:
             pos_std = float(
                 math.sqrt(
