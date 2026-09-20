@@ -12,7 +12,7 @@ python3 -m analysis leak BAG [--plot out.png]               # measurement error 
 python3 -m analysis windows BAG                             # filter vs measurement vs truth, 5 s windows
 python3 -m analysis loop BAG T_START T_END                  # over-swing, command make-up, plant gain and lag
 python3 -m analysis figure mechanism BAG OUT.png [--tmax 130 --compact]
-python3 -m analysis figure pdock RESULTS.csv OUT.png        # columns: arm, period, outcome[, clean, dock]
+python3 -m analysis figure pdock RESULTS.csv OUT.png        # sweep-runner CSV (outcome DOCKED, clean) or metrics CSV
 python3 -m analysis figure trajectory BAG OUT.png
 python3 -m pytest analysis/tests
 ```
