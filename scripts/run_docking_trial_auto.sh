@@ -1,23 +1,49 @@
 #!/usr/bin/env bash
-# One self-driving docking trial (#36). Launches the full sim, waits for the filter
+# One self-driving docking trial (#36, #70). Launches the full sim, waits for the filter
 # to go HEALTHY, auto-engages the FSM, records a --low-impact bag, waits for DOCKED
 # (or times out), then tears the whole stack down cleanly. This is the building block
 # the sweep loop wraps; run it standalone first to prove the loop on one cell.
 #
 # Usage:
-#   ./scripts/run_docking_trial_auto.sh [period_s] [regime] [sway_phase_rad] [label]
+#   ./scripts/run_docking_trial_auto.sh [period_s] [arm] [sway_phase_rad] [label] [nav_level]
 #     period_s   dock sway period; "0" (or DOCK_STATIC=1) -> static dock (no sway)
-#     regime     filter process_noise_regime: sway (method) | static (ff off, baseline)
+#     arm        A reactive | B original feedforward | C fix | D oracle
+#                (legacy names accepted: static = A, sway = B)
 #     phase_rad  sway start phase (vary across reps for an honest success rate)
-# Env knobs: SWAY_AMP, READY_TIMEOUT, DOCK_TIMEOUT, WS, EXTRA_LAUNCH_ARGS
+#     label      bag label prefix (default built from the cell)
+#     nav_level  navigation-error level: none | low | medium | high (default none)
+# Env knobs: SWAY_AMP, READY_TIMEOUT, DOCK_TIMEOUT, WS, EXTRA_LAUNCH_ARGS, DRY_RUN=1
+#
+# Bag directory names follow scripts/analysis/labels.py:
+#   <label>_<arm>_<dock>_p<period>_ph<phase>[_nav<level>]_<YYYYMMDD>_<HHMMSS>
+# so the analysis package parses every cell without a per-sweep regex.
 #
 # WARNING: teardown pkills gazebo/ardusub/mavros, so do not run other sims meanwhile.
 set -uo pipefail   # not -e: a failed step should still trigger teardown, not abort
 
 PERIOD="${1:-18}"
-REGIME="${2:-sway}"
+ARM="${2:-B}"
 PHASE="${3:-0.0}"
-LABEL="${4:-auto_${REGIME}_p${PERIOD}_ph${PHASE}}"
+NAV="${5:-none}"
+case "$ARM" in static) ARM=A;; sway) ARM=B;; esac
+DOCK="sway"; { [ "$PERIOD" = "0" ] || [ "${DOCK_STATIC:-0}" = "1" ]; } && DOCK="static"
+NAVTAG=""; [ "$NAV" != "none" ] && NAVTAG="_nav${NAV}"
+LABEL="${4:-auto}_${ARM}_${DOCK}_p${PERIOD}_ph${PHASE}${NAVTAG}"
+
+# Arm -> launch arguments. A, B and D exist (D needs feedforward_source from #68);
+# every arm passes the navigation-error level that #69 adds. Arm C (the fix, #67) has
+# no launch arguments yet. ros2 launch silently ignores unknown key:=value pairs, so
+# passing made-up ones would run arm B under a C label; refuse instead until the
+# fix arm lands, then put its arguments here (expected: a velocity-closed feedforward
+# switch and a stale velocity decay time constant).
+case "$ARM" in
+  A) ARM_ARGS="process_noise_regime:=static" ;;
+  B) ARM_ARGS="process_noise_regime:=sway" ;;
+  C) echo "arm C is not implemented yet: no launch arguments exist for the fix (#67), refusing to run it as arm B"; exit 2 ;;
+  D) ARM_ARGS="process_noise_regime:=sway feedforward_source:=oracle" ;;
+  *) echo "unknown arm: $ARM (A|B|C|D)"; exit 2 ;;
+esac
+[ "$NAV" != "none" ] && ARM_ARGS="$ARM_ARGS nav_error_level:=$NAV"
 
 SWAY_AMP="${SWAY_AMP:-0.1}"
 READY_TIMEOUT="${READY_TIMEOUT:-150}"   # wall-seconds; RTF<1 makes warmup slow
@@ -76,10 +102,14 @@ else
 fi
 
 # --- launch the whole stack in its own process group ---
-log "launching sim (regime=$REGIME) -> /tmp/${LABEL}.log"
+if [ "${DRY_RUN:-0}" = "1" ]; then
+  echo "DRY $LABEL: ros2 launch sim sim.launch.py use_control:=true $ARM_ARGS ${EXTRA_LAUNCH_ARGS:-} (dock ${DOCK_SWAY_ENABLED:-} period ${DOCK_SWAY_PERIOD:-})"
+  echo "RESULT $LABEL DRYRUN"; exit 0
+fi
+log "launching sim (arm=$ARM nav=$NAV) -> /tmp/${LABEL}.log"
 setsid ros2 launch sim sim.launch.py \
     use_control:=true use_deadman:=false use_aruco:=true use_mock_led:=true \
-    use_docking_rviz:=false process_noise_regime:="$REGIME" ${EXTRA_LAUNCH_ARGS:-} \
+    use_docking_rviz:=false $ARM_ARGS ${EXTRA_LAUNCH_ARGS:-} \
     > "/tmp/${LABEL}.log" 2>&1 &
 LAUNCH_PID=$!
 
