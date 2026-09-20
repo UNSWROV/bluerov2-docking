@@ -5,7 +5,7 @@ import argparse
 import glob
 import os
 
-from . import figures, leak, loop, metrics, stepfit, sweep, windows
+from . import figures, leak, loop, metrics, navreplay, plantid, replay, stepfit, sweep, windows
 from .tracks import load_trial
 
 
@@ -21,6 +21,9 @@ def main():
     p = sub.add_parser("sweep"); p.add_argument("bag_dir"); p.add_argument("--out", default="sweep_summary.csv")
     p = sub.add_parser("metrics"); p.add_argument("bag_dir"); p.add_argument("--out", default="metrics.csv")
     p = sub.add_parser("stepfit"); p.add_argument("bag"); p.add_argument("--axis", default="y"); p.add_argument("--cmd-topic", dest="cmd_topic", default="/cmd_vel")
+    p = sub.add_parser("replay"); p.add_argument("bag"); p.add_argument("--plot"); p.add_argument("--hold", type=float, default=1.0); p.add_argument("--decay", type=float, default=1.0); p.add_argument("--regime", choices=["static", "sway"])
+    p = sub.add_parser("navreplay"); p.add_argument("bags", nargs="+"); p.add_argument("--out", default="navreplay.csv"); p.add_argument("--plot"); p.add_argument("--seeds", type=int, default=1)
+    p = sub.add_parser("plantid"); p.add_argument("bag_dir"); p.add_argument("--out", default="plantid.csv")
     p = sub.add_parser("leak"); p.add_argument("bag"); p.add_argument("--plot"); p.add_argument("--axis", default="y")
     p = sub.add_parser("windows"); p.add_argument("bag"); p.add_argument("--axis", default="y")
     p = sub.add_parser("loop"); p.add_argument("bag"); p.add_argument("t_start", type=float); p.add_argument("t_end", type=float)
@@ -31,6 +34,12 @@ def main():
         sweep.run(a.bag_dir, a.out)
     elif a.cmd == "metrics":
         metrics.run(a.bag_dir, a.out)
+    elif a.cmd == "navreplay":
+        navreplay.run(a.bags, a.out, seeds=tuple(range(a.seeds)), plot=a.plot)
+    elif a.cmd == "plantid":
+        plantid.run(a.bag_dir, a.out)
+    elif a.cmd == "replay":
+        replay.report(load_trial(_bag(a.bag)), plot=a.plot, hold_s=a.hold, decay_s=a.decay, regime=a.regime)
     elif a.cmd == "leak":
         leak.report(load_trial(_bag(a.bag)), "xyz".index(a.axis), a.plot)
     elif a.cmd == "windows":

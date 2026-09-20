@@ -55,6 +55,8 @@ class Trial:
     path: str
     t_meas: np.ndarray          # measurement stamps
     p_cam: np.ndarray           # fused dock position in camera_link
+    q_cam: np.ndarray           # fused dock orientation in camera_link, xyzw
+    cov: np.ndarray             # 6x6 measurement covariance per measurement
     n_markers: np.ndarray
     marker_ids: list
     odom: PoseTrack             # ground-truth vehicle pose
@@ -92,6 +94,8 @@ def load_trial(path: str) -> Trial:
         path=path,
         t_meas=np.array([stamp(m) for _, m in meas]),
         p_cam=np.array([vec3(m.pose.pose.position) for _, m in meas]),
+        q_cam=np.array([quat_xyzw(m.pose.pose.orientation) for _, m in meas]),
+        cov=np.array([np.asarray(m.pose.covariance, float).reshape(6, 6) for _, m in meas]),
         n_markers=np.array([m.num_markers for _, m in meas]),
         marker_ids=[tuple(sorted(m.marker_ids)) for _, m in meas],
         odom=PoseTrack(ot_s, [vec3(m.pose.pose.position) for _, m in odo],
@@ -118,6 +122,14 @@ def world_from_cam(p_cam, veh: PoseTrack, t, shift=0.0):
     """Camera-frame dock position to world through the vehicle pose at t (+ shift)."""
     p_base = T_MOUNT + R_CAM.apply(p_cam)
     return veh.pos(t + shift) + veh.att(t + shift).apply(p_base)
+
+
+def world_pose_from_cam(p_cam, q_cam, veh: PoseTrack, t):
+    """Camera-frame dock pose to world pose (position, quaternion xyzw) as tf2 does."""
+    r_veh = veh.att(t)
+    p = world_from_cam(p_cam, veh, t)
+    q = (r_veh * R_CAM * R.from_quat(q_cam)).as_quat()
+    return p, q
 
 
 def measurement_error(trial: Trial):
