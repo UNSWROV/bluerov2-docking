@@ -38,5 +38,9 @@ for per in (8.0, 6.0):
 run(lambda t: 0.0, 3)
 p.publish(Twist()); n.destroy_node(); rclpy.shutdown()
 PY
-kill -INT $REC; wait $REC 2>/dev/null
+# a background job in a non-interactive shell ignores SIGINT; TERM lets rosbag2
+# finalise the file, and the analysis reader tolerates a truncated tail anyway
+kill -TERM $REC 2>/dev/null
+for _ in $(seq 1 20); do kill -0 $REC 2>/dev/null || break; sleep 1; done
+kill -KILL $REC 2>/dev/null; wait $REC 2>/dev/null
 log "done: $OUT  (fit with: python3 -m analysis stepfit $OUT --axis $AXIS --cmd-topic $CMD_TOPIC)"
