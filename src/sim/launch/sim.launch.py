@@ -29,6 +29,18 @@ def generate_launch_description():
             "' == 'true' else '/cmd_vel'",
         ]
     )
+    # Navigation error (#69): when a level is set the injector runs and the TF relay
+    # reads its output instead of the ground-truth odometry.
+    nav_error_on = PythonExpression(
+        ["'", LaunchConfiguration("nav_error_level"), "' != 'none'"]
+    )
+    robot_odom_topic = PythonExpression(
+        [
+            "'/nav/odometry' if '",
+            LaunchConfiguration("nav_error_level"),
+            "' != 'none' else '/model/bluerov2_heavy/odometry'",
+        ]
+    )
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_docking_rviz", default_value="false"),
@@ -59,6 +71,10 @@ def generate_launch_description():
             DeclareLaunchArgument("process_noise_regime", default_value="sway"),
             # Sway-regime WNA density sigma_a; forwarded to aruco.launch.py (#36 trade study).
             DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
+            # Navigation-error level injected into the odometry every node sees
+            # (none | low | medium | high, #69). Ground truth stays on the original topic.
+            DeclareLaunchArgument("nav_error_level", default_value="none"),
+            DeclareLaunchArgument("nav_error_seed", default_value="0"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -119,12 +135,25 @@ def generate_launch_description():
                 ],
                 output="screen",
             ),
+            Node(
+                package="perception",
+                executable="nav_error_injector",
+                name="nav_error_injector",
+                parameters=[{
+                    "use_sim_time": True,
+                    "level": LaunchConfiguration("nav_error_level"),
+                    "seed": LaunchConfiguration("nav_error_seed"),
+                }],
+                condition=IfCondition(nav_error_on),
+                output="screen",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
                         [FindPackageShare("perception"), "launch/led_mock.launch.py"]
                     )
                 ),
+                launch_arguments={"robot_odom_topic": robot_odom_topic}.items(),
                 condition=IfCondition(LaunchConfiguration("use_mock_led")),
             ),
             IncludeLaunchDescription(
