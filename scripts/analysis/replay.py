@@ -52,9 +52,11 @@ class ReplayResult:
     n_init_deferred: int
 
 
-def replay(trial: Trial, params: ReplayParams = ReplayParams()) -> ReplayResult:
+def replay(trial: Trial, params: ReplayParams = ReplayParams(), veh_track=None) -> ReplayResult:
+    """Arm B: world-frame filter. veh_track is the vehicle pose the node would use
+    (the /tf relay by default; a corrupted track for navigation-error studies)."""
     tm = trial.t_meas
-    z_p, z_q = world_pose_from_cam(trial.p_cam, trial.q_cam, trial.tf, tm)
+    z_p, z_q = world_pose_from_cam(trial.p_cam, trial.q_cam, veh_track or trial.tf, tm)
     arrival = tm + params.latency_s
     kf = DockPoseKalmanFilter(max_speed=params.max_dock_speed if params.max_dock_speed > 0 else None)
     dt_pred = 1.0 / params.predict_rate_hz
