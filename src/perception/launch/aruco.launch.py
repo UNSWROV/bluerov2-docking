@@ -52,6 +52,9 @@ def generate_launch_description():
             DeclareLaunchArgument("process_noise_regime", default_value="sway"),
             # Sway-regime WNA density sigma_a (m/s^2); velocity-state gain knob (#36).
             DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
+            # bounded velocity state during blackout (fix arm); hold 0 disables
+            DeclareLaunchArgument("stale_velocity_hold_s", default_value="0.0"),
+            DeclareLaunchArgument("stale_velocity_decay_s", default_value="1.0"),
             # Default True: aruco.launch.py is almost always invoked via
             # sim.launch.py during development. Override to False for real-
             # hardware runs where /clock isn't published.
@@ -119,6 +122,14 @@ def generate_launch_description():
                                 ),
                                 "sway_sigma_a": ParameterValue(
                                     LaunchConfiguration("sway_sigma_a"),
+                                    value_type=float,
+                                ),
+                                "stale_velocity_hold_s": ParameterValue(
+                                    LaunchConfiguration("stale_velocity_hold_s"),
+                                    value_type=float,
+                                ),
+                                "stale_velocity_decay_s": ParameterValue(
+                                    LaunchConfiguration("stale_velocity_decay_s"),
                                     value_type=float,
                                 ),
                                 "min_markers_for_init": 2,
