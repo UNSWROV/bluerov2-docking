@@ -10,6 +10,12 @@ def generate_launch_description():
         [
             DeclareLaunchArgument("target_frame", default_value="map"),
             DeclareLaunchArgument("cmd_vel_topic", default_value="/cmd_vel"),
+            # Dock-velocity source for the feedforward: the filter's velocity state by
+            # default, or the ground-truth oracle (/dock/oracle_velocity) for arm D (#68).
+            DeclareLaunchArgument(
+                "dock_velocity_topic",
+                default_value="/perception/dock_pose_filtered/velocity",
+            ),
             Node(
                 package="control",
                 executable="coarse_approach_node",
@@ -20,7 +26,13 @@ def generate_launch_description():
                     ),
                     {"target_frame": LaunchConfiguration("target_frame")},
                 ],
-                remappings=[("/cmd_vel", LaunchConfiguration("cmd_vel_topic"))],
+                remappings=[
+                    ("/cmd_vel", LaunchConfiguration("cmd_vel_topic")),
+                    (
+                        "/perception/dock_pose_filtered/velocity",
+                        LaunchConfiguration("dock_velocity_topic"),
+                    ),
+                ],
                 output="screen",
             ),
         ]
