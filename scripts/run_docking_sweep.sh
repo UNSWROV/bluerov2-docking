@@ -17,7 +17,7 @@
 #   SWEEP_TAG=<tag>               reuse a tag to RESUME
 #   DRY_RUN=1                     list the cells and exit without launching anything
 # Per-cell timing passes through: READY_TIMEOUT, DOCK_TIMEOUT (simulation seconds),
-# WALL_GUARD, SWAY_AMP.
+# WALL_GUARD, SWAY_AMP. MAX_CELL_WALL (default 2400 s) kills a stuck cell.
 #
 # Stopping from outside: the script writes its pid to $WS/bags/<SWEEP_TAG>.pid, so
 #   kill -TERM "$(cat $WS/bags/<SWEEP_TAG>.pid)"
@@ -87,7 +87,24 @@ run_one(){  # arm nav dock period phase
   # trap then tears down the sim stack it started under setsid.
   env "${extra[@]}" "$AUTO" "$period" "$arm" "$phase" "$TAG" "$nav" > "$WS/bags/${label}.log" 2>&1 &
   CHILD=$!
-  wait "$CHILD"
+  # Cell watchdog: a cell that outlives MAX_CELL_WALL (default 40 min, several times
+  # a full trial) is stuck in something its own traps cannot escape (a hung ros2
+  # CLI call inside a command substitution held one cell for eight hours on
+  # 2026-09-21). Kill its whole tree and the sim stack, then move on; the cell has
+  # no finalised bag, so the next resume reruns it.
+  local t_cell=$SECONDS
+  while kill -0 "$CHILD" 2>/dev/null; do
+    if [ $((SECONDS - t_cell)) -ge "${MAX_CELL_WALL:-2400}" ]; then
+      log "CELL KILLED $label after $((SECONDS - t_cell))s wall"
+      pkill -KILL -P "$CHILD" 2>/dev/null; kill -KILL "$CHILD" 2>/dev/null
+      pkill -9 -f "gz sim" 2>/dev/null; pkill -9 -f "ardusub" 2>/dev/null; pkill -9 -f "ros2 launch" 2>/dev/null
+      pkill -9 -f "parameter_bridge|mavros_node|ros2 topic|ros2 bag" 2>/dev/null
+      sleep 10
+      break
+    fi
+    sleep 5
+  done
+  wait "$CHILD" 2>/dev/null
   CHILD=""
   local out; out=$(grep "^RESULT" "$WS/bags/${label}.log" | tail -1)
   local outcome; outcome=$(awk '{print $3}' <<< "$out"); outcome=${outcome:-NORUN}
