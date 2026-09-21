@@ -68,7 +68,9 @@ REC_PID=""
 
 log(){ echo "[auto $(date +%H:%M:%S)] $*"; }
 # Integer simulation seconds from /clock, empty until the simulator publishes it.
-sim_now(){ timeout 3 ros2 topic echo /clock --once 2>/dev/null | awk '/^  sec:/{print $2; exit}'; }
+# timeout -k: on 2026-09-21 a `ros2 topic echo` ignored TERM and a cell hung for
+# eight hours; --no-daemon: the stale ros2 daemon was the likely cause.
+sim_now(){ timeout -k 2 3 ros2 topic echo --no-daemon /clock --once 2>/dev/null | awk '/^  sec:/{print $2; exit}'; }
 # Elapsed simulation seconds since $1 (a sim_now reading). Falls back to wall seconds
 # since $2 only while /clock has never been seen ($1 empty); once the clock exists a
 # single failed read (ros2 topic echo can exceed its timeout under load) must not
@@ -181,12 +183,12 @@ ready=0; t0=$SECONDS; last=0; s0=""; SIM_ELAPSED=0
 while [ $((SECONDS - t0)) -lt $((READY_TIMEOUT * WALL_GUARD)) ]; do
   [ -z "$s0" ] && s0=$(sim_now)   # the clock starts with the simulator, some seconds after launch
   sim_elapsed "$s0" "$t0"; [ "$SIM_ELAPSED" -ge "$READY_TIMEOUT" ] && break
-  if timeout 4 ros2 topic echo /perception/dock_pose_filtered --once \
+  if timeout -k 2 4 ros2 topic echo --no-daemon /perception/dock_pose_filtered --once \
        --qos-reliability best_effort 2>/dev/null | grep -q "position:"; then
     ready=1; break
   fi
   if [ $((SECONDS - last)) -ge 15 ]; then
-    h=$(timeout 3 ros2 topic echo /perception/dock_pose_filtered/health --once \
+    h=$(timeout -k 2 3 ros2 topic echo --no-daemon /perception/dock_pose_filtered/health --once \
          --qos-reliability best_effort 2>/dev/null | grep -oP "status: \K\d+")
     log "  ...warming up (health=${h:-?}; 0=WARMING 1=HEALTHY 2=DEGRADED 3=STALE) sim t+${SIM_ELAPSED}s, wall t+$((SECONDS - t0))s"
     last=$SECONDS
@@ -228,7 +230,7 @@ log "waiting for DOCKED (<=${DOCK_TIMEOUT}s sim, wall guard $((DOCK_TIMEOUT * WA
 outcome="TIMEOUT"; t0=$SECONDS; s0=$(sim_now); SIM_ELAPSED=0
 while [ $((SECONDS - t0)) -lt $((DOCK_TIMEOUT * WALL_GUARD)) ]; do
   sim_elapsed "$s0" "$t0"; [ "$SIM_ELAPSED" -ge "$DOCK_TIMEOUT" ] && break
-  s=$(timeout 4 ros2 topic echo /docking/state --once 2>/dev/null | grep -oP "label: \K\w+")
+  s=$(timeout -k 2 4 ros2 topic echo --no-daemon /docking/state --once 2>/dev/null | grep -oP "label: \K\w+")
   if [ "$s" = "DOCKED" ]; then outcome="DOCKED"; break; fi
   sleep 2
 done
