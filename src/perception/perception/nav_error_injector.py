@@ -27,6 +27,11 @@ class NavErrorInjector(Node):
         self.declare_parameter("level", "none")
         self.declare_parameter("sigma_b", 0.0)      # overrides the level's sigma_b when > 0
         self.declare_parameter("tau_b", 30.0)
+        # white position and velocity noise on the corrupted solution; negative keeps
+        # the level's default. The 5 mm default defeats the coarse handoff gate, which
+        # differentiates the relayed pose, so the navigation sweep sets it explicitly.
+        self.declare_parameter("sigma_np", -1.0)
+        self.declare_parameter("sigma_nv", -1.0)
         self.declare_parameter("seed", 0)
         self.declare_parameter("input_topic", "/model/bluerov2_heavy/odometry")
         self.declare_parameter("output_topic", "/nav/odometry")
@@ -37,9 +42,14 @@ class NavErrorInjector(Node):
         if base is None and sigma_b <= 0:
             self._params = None
         else:
+            default = base if base is not None else NavErrorParams(sigma_b=sigma_b)
+            s_np = self.get_parameter("sigma_np").get_parameter_value().double_value
+            s_nv = self.get_parameter("sigma_nv").get_parameter_value().double_value
             self._params = NavErrorParams(
                 sigma_b=sigma_b if sigma_b > 0 else base.sigma_b,
                 tau_b=self.get_parameter("tau_b").get_parameter_value().double_value,
+                sigma_np=s_np if s_np >= 0 else default.sigma_np,
+                sigma_nv=s_nv if s_nv >= 0 else default.sigma_nv,
                 seed=self.get_parameter("seed").get_parameter_value().integer_value,
             )
         self._gen = GaussMarkovBias(self._params) if self._params else None
