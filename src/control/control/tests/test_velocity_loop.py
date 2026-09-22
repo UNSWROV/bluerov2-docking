@@ -66,3 +66,23 @@ def test_reset_clears_the_integral():
     loop.step(np.array([0.1, 0.1, 0.1]), np.zeros(3), 0.1)
     loop.reset()
     assert np.all(loop.integral == 0.0)
+
+
+def test_gate_authority_bounds_the_output_and_the_windup_check():
+    loop = VelocityLoop()
+    out = loop.step(np.array([0.0, 1.0, 0.0]), np.zeros(3), 0.05, effort_max=0.1)[1]
+    assert out == 0.1
+    for _ in range(200):
+        loop.step(np.array([0.0, 1.0, 0.0]), np.zeros(3), 0.05, effort_max=0.1)
+    # saturated at the reduced authority, so the integral must not have grown past it
+    assert abs(loop.integral[1]) * 0.74 <= 0.1 + 1e-9
+
+
+def test_fallback_scales_the_setpoint_by_the_plant_gain_and_resets_the_loop():
+    from control.velocity_loop import FALLBACK_GAIN, effort_from_setpoint
+    loop = VelocityLoop()
+    loop.step(np.array([0.0, 0.2, 0.0]), np.zeros(3), 0.5)
+    assert loop.integral[1] != 0.0
+    out = effort_from_setpoint(loop, np.array([0.0, 0.08, 0.0]), None, 0.05)
+    assert np.isclose(out[1], 0.08 * FALLBACK_GAIN)
+    assert np.all(loop.integral == 0.0)
