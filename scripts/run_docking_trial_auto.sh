@@ -12,7 +12,9 @@
 #     phase_rad  sway start phase (vary across reps for an honest success rate)
 #     label      bag label prefix (default built from the cell)
 #     nav_level  navigation-error level: none | low | medium | high (default none)
-# Env knobs: SWAY_AMP, READY_TIMEOUT, DOCK_TIMEOUT, WS, EXTRA_LAUNCH_ARGS, DRY_RUN=1
+# Env knobs: SWAY_AMP, READY_TIMEOUT, DOCK_TIMEOUT (simulation seconds), WALL_GUARD
+#            (wall seconds per simulation second before a stalled sim is abandoned),
+#            WS, EXTRA_LAUNCH_ARGS, DRY_RUN=1
 #
 # Bag directory names follow scripts/analysis/labels.py:
 #   <label>_<arm>_<dock>_p<period>_ph<phase>[_nav<level>]_<YYYYMMDD>_<HHMMSS>
@@ -46,8 +48,20 @@ esac
 [ "$NAV" != "none" ] && ARM_ARGS="$ARM_ARGS nav_error_level:=$NAV"
 
 SWAY_AMP="${SWAY_AMP:-0.1}"
-READY_TIMEOUT="${READY_TIMEOUT:-150}"   # wall-seconds; RTF<1 makes warmup slow
-DOCK_TIMEOUT="${DOCK_TIMEOUT:-200}"     # wall-seconds to reach DOCKED before giving up
+# Timeouts count SIMULATION seconds read from /clock, so a throttled host (real-time
+# factor 0.4 to 0.7 when hot) runs the same trial, only slower; with the filter on the
+# node clock the outcome does not depend on the real-time factor. WALL_GUARD bounds
+# the wall time per simulation second so a simulator that never advances is abandoned.
+READY_TIMEOUT="${READY_TIMEOUT:-150}"   # sim-seconds for the filter to initialise
+DOCK_TIMEOUT="${DOCK_TIMEOUT:-200}"     # sim-seconds to reach DOCKED before giving up
+WALL_GUARD="${WALL_GUARD:-4}"
+# A launch occasionally stalls before the simulator starts stepping (no /clock at all,
+# the GUI waiting for the world list, ArduSub waiting for the physics backend); seen
+# once in ten launches on 2026-09-20. Relaunch the stack rather than lose the cell.
+# STARTUP_WALL scales with WALL_GUARD: a throttled host is slow to bring the stack up
+# as well as to step it (default 4 x 45 s = 180 s).
+STARTUP_WALL="${STARTUP_WALL:-$((45 * WALL_GUARD))}"   # wall seconds for /clock to appear and advance
+LAUNCH_ATTEMPTS="${LAUNCH_ATTEMPTS:-3}"
 WS="${WS:-/home/ubuntu/ws_docking}"
 REC="$WS/src/bluerov2-docking/scripts/record_docking_trial.sh"
 LAUNCH_PID=""
@@ -55,6 +69,25 @@ ENGAGE_PID=""
 REC_PID=""
 
 log(){ echo "[auto $(date +%H:%M:%S)] $*"; }
+# Integer simulation seconds from /clock, empty until the simulator publishes it.
+# timeout -k: on 2026-09-21 a `ros2 topic echo` ignored TERM and a cell hung for
+# eight hours; --no-daemon: the stale ros2 daemon was the likely cause.
+sim_now(){ timeout -k 2 3 ros2 topic echo --no-daemon /clock --once 2>/dev/null | awk '/^  sec:/{print $2; exit}'; }
+# Elapsed simulation seconds since $1 (a sim_now reading). Falls back to wall seconds
+# since $2 only while /clock has never been seen ($1 empty); once the clock exists a
+# single failed read (ros2 topic echo can exceed its timeout under load) must not
+# count as wall time, so the last good reading is repeated instead.
+# Sets SIM_ELAPSED rather than printing it: called inside $(...) the update to the
+# last good reading would be lost in the subshell.
+SIM_ELAPSED=0
+sim_elapsed(){
+  local now; now=$(sim_now)
+  if [ -n "$1" ]; then
+    [ -n "$now" ] && SIM_ELAPSED=$((now - $1))
+  else
+    SIM_ELAPSED=$((SECONDS - $2))
+  fi
+}
 pgid_of(){ ps -o pgid= -p "$1" 2>/dev/null | tr -d ' '; }
 killgrp(){ local g; g=$(pgid_of "${1:-}"); [ -n "$g" ] && kill -"${2:-TERM}" -- "-$g" 2>/dev/null; return 0; }
 # ArduSub SITL binds TCP 5760 (= hex 1680). `ss`/`netstat` aren't in the container,
@@ -81,6 +114,9 @@ teardown(){
   pkill -9 -f "parameter_bridge" 2>/dev/null
   pkill -9 -f "mavros_node"     2>/dev/null
   pkill -9 -f "ruby.*gz"        2>/dev/null
+  # Fast DDS leaves shared-memory port files behind after a hard kill; the next
+  # launch then logs "Failed init_port fastrtps_port..." and falls back to UDP.
+  rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null
   # wait for ArduSub's TCP 5760 to release, else the next launch collides
   for _ in $(seq 1 30); do port_5760_busy || break; sleep 1; done
   sleep 3
@@ -106,35 +142,63 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   echo "DRY $LABEL: ros2 launch sim sim.launch.py use_control:=true $ARM_ARGS ${EXTRA_LAUNCH_ARGS:-} (dock ${DOCK_SWAY_ENABLED:-} period ${DOCK_SWAY_PERIOD:-})"
   echo "RESULT $LABEL DRYRUN"; exit 0
 fi
-log "launching sim (arm=$ARM nav=$NAV) -> /tmp/${LABEL}.log"
-setsid ros2 launch sim sim.launch.py \
-    use_control:=true use_deadman:=false use_aruco:=true use_mock_led:=true \
-    use_docking_rviz:=false $ARM_ARGS ${EXTRA_LAUNCH_ARGS:-} \
-    > "/tmp/${LABEL}.log" 2>&1 &
-LAUNCH_PID=$!
+launch_stack(){
+  setsid ros2 launch sim sim.launch.py \
+      use_control:=true use_deadman:=false use_aruco:=true use_mock_led:=true \
+      use_docking_rviz:=false $ARM_ARGS ${EXTRA_LAUNCH_ARGS:-} \
+      > "/tmp/${LABEL}.log" 2>&1 &
+  LAUNCH_PID=$!
+}
+# true once /clock exists and has advanced, false if it has not within STARTUP_WALL
+sim_stepping(){
+  local t0=$SECONDS first="" now
+  while [ $((SECONDS - t0)) -lt "$STARTUP_WALL" ]; do
+    now=$(sim_now)
+    if [ -n "$now" ]; then
+      [ -z "$first" ] && first=$now
+      [ "$now" -gt "$first" ] && return 0
+    fi
+    sleep 3
+  done
+  return 1
+}
+attempt=1
+while :; do
+  log "launching sim (arm=$ARM nav=$NAV, attempt $attempt of $LAUNCH_ATTEMPTS) -> /tmp/${LABEL}.log"
+  launch_stack
+  sim_stepping && break
+  log "simulator never started stepping within ${STARTUP_WALL}s wall"
+  if [ "$attempt" -ge "$LAUNCH_ATTEMPTS" ]; then
+    log "giving up on this cell"; teardown; echo "RESULT $LABEL STALLED"; exit 2
+  fi
+  cp "/tmp/${LABEL}.log" "/tmp/${LABEL}.stalled${attempt}.log"
+  teardown; attempt=$((attempt + 1))
+done
 
 # --- wait for readiness: the filter has INITIALIZED, i.e. it is publishing a filtered
 # pose (it stays silent while WARMING_UP). Coarse drives on DEGRADED too, so waiting
 # for HEALTHY would deadlock at the ~5m spawn range where the filter is only DEGRADED.
 # Heartbeat logs the health status (0 WARMING_UP, 1 HEALTHY, 2 DEGRADED, 3 STALE) so a
 # genuine stuck-at-1-marker case (status pinned 0) is distinguishable from slow warmup.
-log "waiting for filter to initialize (filtered pose flowing; <=${READY_TIMEOUT}s wall)"
-ready=0; t0=$SECONDS; last=0
-while [ $((SECONDS - t0)) -lt "$READY_TIMEOUT" ]; do
-  if timeout 4 ros2 topic echo /perception/dock_pose_filtered --once \
+log "waiting for filter to initialize (filtered pose flowing; <=${READY_TIMEOUT}s sim, wall guard $((READY_TIMEOUT * WALL_GUARD))s)"
+ready=0; t0=$SECONDS; last=0; s0=""; SIM_ELAPSED=0
+while [ $((SECONDS - t0)) -lt $((READY_TIMEOUT * WALL_GUARD)) ]; do
+  [ -z "$s0" ] && s0=$(sim_now)   # the clock starts with the simulator, some seconds after launch
+  sim_elapsed "$s0" "$t0"; [ "$SIM_ELAPSED" -ge "$READY_TIMEOUT" ] && break
+  if timeout -k 2 4 ros2 topic echo --no-daemon /perception/dock_pose_filtered --once \
        --qos-reliability best_effort 2>/dev/null | grep -q "position:"; then
     ready=1; break
   fi
   if [ $((SECONDS - last)) -ge 15 ]; then
-    h=$(timeout 3 ros2 topic echo /perception/dock_pose_filtered/health --once \
+    h=$(timeout -k 2 3 ros2 topic echo --no-daemon /perception/dock_pose_filtered/health --once \
          --qos-reliability best_effort 2>/dev/null | grep -oP "status: \K\d+")
-    log "  ...warming up (health=${h:-?}; 0=WARMING 1=HEALTHY 2=DEGRADED 3=STALE) t+$((SECONDS - t0))s"
+    log "  ...warming up (health=${h:-?}; 0=WARMING 1=HEALTHY 2=DEGRADED 3=STALE) sim t+${SIM_ELAPSED}s, wall t+$((SECONDS - t0))s"
     last=$SECONDS
   fi
   sleep 3
 done
-if [ "$ready" != "1" ]; then log "NOT INITIALIZED within ${READY_TIMEOUT}s -> abort"; teardown; exit 2; fi
-log "filter initialized at t+$((SECONDS - t0))s"
+if [ "$ready" != "1" ]; then log "NOT INITIALIZED within ${READY_TIMEOUT}s sim (wall $((SECONDS - t0))s) -> abort"; teardown; exit 2; fi
+sim_elapsed "$s0" "$t0"; log "filter initialized at sim t+${SIM_ELAPSED}s, wall t+$((SECONDS - t0))s"
 
 # --- wait for ardusub_init to finish applying the default flight mode BEFORE engaging.
 # It retries flight_mode:=POSHOLD until it sticks; if the FSM's COARSE-entry ALT_HOLD
@@ -164,14 +228,18 @@ setsid ros2 topic pub -r 2 /docking/engaged std_msgs/msg/Bool "{data: true}" > /
 ENGAGE_PID=$!
 
 # --- wait for DOCKED (or timeout) ---
-log "waiting for DOCKED (<=${DOCK_TIMEOUT}s wall)"
-outcome="TIMEOUT"; t0=$SECONDS
-while [ $((SECONDS - t0)) -lt "$DOCK_TIMEOUT" ]; do
-  s=$(timeout 4 ros2 topic echo /docking/state --once 2>/dev/null | grep -oP "label: \K\w+")
+log "waiting for DOCKED (<=${DOCK_TIMEOUT}s sim, wall guard $((DOCK_TIMEOUT * WALL_GUARD))s)"
+outcome="TIMEOUT"; t0=$SECONDS; s0=$(sim_now); SIM_ELAPSED=0
+while [ $((SECONDS - t0)) -lt $((DOCK_TIMEOUT * WALL_GUARD)) ]; do
+  [ -z "$s0" ] && s0=$(sim_now)   # a failed first read must not leave the wait on wall time
+  sim_elapsed "$s0" "$t0"; [ "$SIM_ELAPSED" -ge "$DOCK_TIMEOUT" ] && break
+  s=$(timeout -k 2 4 ros2 topic echo --no-daemon /docking/state --once 2>/dev/null | grep -oP "label: \K\w+")
   if [ "$s" = "DOCKED" ]; then outcome="DOCKED"; break; fi
   sleep 2
 done
-log "outcome: $outcome at t+$((SECONDS - t0))s"
+sim_elapsed "$s0" "$t0"; el=$SIM_ELAPSED; wall=$((SECONDS - t0))
+[ "$wall" -ge $((DOCK_TIMEOUT * WALL_GUARD)) ] && [ "$el" -lt "$DOCK_TIMEOUT" ] && outcome="STALLED"
+log "outcome: $outcome at sim t+${el}s, wall t+${wall}s (real-time factor $(awk "BEGIN{printf \"%.2f\", ($wall>0)?$el/$wall:0}"))"
 
 trap - INT TERM
 teardown
@@ -181,7 +249,7 @@ teardown
 bag=$(ls -dt "$WS"/bags/"${LABEL}"_* 2>/dev/null | head -1)
 if [ -n "$bag" ] && [ ! -f "$bag/metadata.yaml" ]; then
   log "reindexing bag (metadata.yaml missing)"
-  ros2 bag reindex "$bag" -s mcap >/dev/null 2>&1
+  timeout -k 5 60 ros2 bag reindex "$bag" -s mcap >/dev/null 2>&1
 fi
 
 log "done: $LABEL -> $outcome  (bag in $WS/bags/, log /tmp/${LABEL}.log)"
