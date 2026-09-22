@@ -57,8 +57,10 @@ WALL_GUARD="${WALL_GUARD:-4}"
 # A launch occasionally stalls before the simulator starts stepping (no /clock at all,
 # the GUI waiting for the world list, ArduSub waiting for the physics backend); seen
 # once in ten launches on 2026-09-20. Relaunch the stack rather than lose the cell.
-STARTUP_WALL="${STARTUP_WALL:-60}"          # wall seconds for /clock to appear and advance
-LAUNCH_ATTEMPTS="${LAUNCH_ATTEMPTS:-2}"
+# STARTUP_WALL scales with WALL_GUARD: a throttled host is slow to bring the stack up
+# as well as to step it (default 4 x 45 s = 180 s).
+STARTUP_WALL="${STARTUP_WALL:-$((45 * WALL_GUARD))}"   # wall seconds for /clock to appear and advance
+LAUNCH_ATTEMPTS="${LAUNCH_ATTEMPTS:-3}"
 WS="${WS:-/home/ubuntu/ws_docking}"
 REC="$WS/src/bluerov2-docking/scripts/record_docking_trial.sh"
 LAUNCH_PID=""
@@ -228,6 +230,7 @@ ENGAGE_PID=$!
 log "waiting for DOCKED (<=${DOCK_TIMEOUT}s sim, wall guard $((DOCK_TIMEOUT * WALL_GUARD))s)"
 outcome="TIMEOUT"; t0=$SECONDS; s0=$(sim_now); SIM_ELAPSED=0
 while [ $((SECONDS - t0)) -lt $((DOCK_TIMEOUT * WALL_GUARD)) ]; do
+  [ -z "$s0" ] && s0=$(sim_now)   # a failed first read must not leave the wait on wall time
   sim_elapsed "$s0" "$t0"; [ "$SIM_ELAPSED" -ge "$DOCK_TIMEOUT" ] && break
   s=$(timeout -k 2 4 ros2 topic echo --no-daemon /docking/state --once 2>/dev/null | grep -oP "label: \K\w+")
   if [ "$s" = "DOCKED" ]; then outcome="DOCKED"; break; fi
@@ -245,7 +248,7 @@ teardown
 bag=$(ls -dt "$WS"/bags/"${LABEL}"_* 2>/dev/null | head -1)
 if [ -n "$bag" ] && [ ! -f "$bag/metadata.yaml" ]; then
   log "reindexing bag (metadata.yaml missing)"
-  ros2 bag reindex "$bag" -s mcap >/dev/null 2>&1
+  timeout -k 5 60 ros2 bag reindex "$bag" -s mcap >/dev/null 2>&1
 fi
 
 log "done: $LABEL -> $outcome  (bag in $WS/bags/, log /tmp/${LABEL}.log)"
