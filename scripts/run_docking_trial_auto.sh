@@ -45,6 +45,9 @@ case "$ARM" in
   *) echo "unknown arm: $ARM (A|B|C|D)"; exit 2 ;;
 esac
 [ "$NAV" != "none" ] && ARM_ARGS="$ARM_ARGS nav_error_level:=$NAV"
+# NAV_SIGMA_NP / NAV_SIGMA_NV (m, m/s): white noise on the injected solution
+[ -n "${NAV_SIGMA_NP:-}" ] && ARM_ARGS="$ARM_ARGS nav_error_sigma_np:=$NAV_SIGMA_NP"
+[ -n "${NAV_SIGMA_NV:-}" ] && ARM_ARGS="$ARM_ARGS nav_error_sigma_nv:=$NAV_SIGMA_NV"
 
 SWAY_AMP="${SWAY_AMP:-0.1}"
 # Timeouts count SIMULATION seconds read from /clock, so a throttled host (real-time
