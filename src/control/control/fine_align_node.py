@@ -90,6 +90,8 @@ class FineAlign(Node):
         self.declare_parameter("feedforward_mode", "open_loop")
         self.declare_parameter("vloop_kp", 0.30)
         self.declare_parameter("vloop_ki", 0.74)
+        # effort per m/s applied when navigation velocity is missing (1 / plant gain)
+        self.declare_parameter("vloop_fallback_gain", 1.0 / 2.7)
         self.declare_parameter("robot_odom_topic", "/model/bluerov2_heavy/odometry")
         mode = self.get_parameter("feedforward_mode").get_parameter_value().string_value
         if mode not in MODES:
@@ -101,6 +103,7 @@ class FineAlign(Node):
                 ki=self.get_parameter("vloop_ki").get_parameter_value().double_value,
             )
         )
+        self._vloop_effort_max = VelocityLoopParams().effort_max
         self._latest_odom: Odometry | None = None
         self._latest_odom_t: float | None = None
 
@@ -266,6 +269,7 @@ class FineAlign(Node):
         # controller stays silent until the phase is confirmed. Coarse is permissive.
         if self._latest_state != DockingState.FINE:
             self._controller.reset()
+            self._vloop.reset()
             self._seated_counter = 0
             self._seated = False
             return
@@ -370,7 +374,14 @@ class FineAlign(Node):
                     "through as effort",
                     throttle_duration_sec=2.0,
                 )
-            lin = effort_from_setpoint(self._vloop, lin, v_meas, self._dt)
+            lin = effort_from_setpoint(
+                self._vloop,
+                lin,
+                v_meas,
+                self._dt,
+                effort_max=self._vloop_effort_max * gate.gain_scale,
+                fallback_gain=self.get_parameter("vloop_fallback_gain").get_parameter_value().double_value,
+            )
 
         twist = Twist()
         twist.linear.x = float(lin[0]) * gate.gain_scale
