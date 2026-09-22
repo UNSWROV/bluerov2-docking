@@ -32,6 +32,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_guidance control/tests/test_guidance.py)
   ament_add_pytest_test(test_health_gate control/tests/test_health_gate.py)
   ament_add_pytest_test(test_fine_guidance control/tests/test_fine_guidance.py)
+  ament_add_pytest_test(test_velocity_loop control/tests/test_velocity_loop.py)
   ament_add_pytest_test(test_coarse_approach_node
     control/integration/test_coarse_approach_node.py
     TIMEOUT 60
@@ -43,6 +44,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_fine_align_node
     control/integration/test_fine_align_node.py
     TIMEOUT 60
+  )
+  ament_add_pytest_test(test_velocity_loop_node
+    control/integration/test_velocity_loop_node.py
+    TIMEOUT 90
   )
 endif()
 
