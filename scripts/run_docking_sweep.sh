@@ -16,7 +16,13 @@
 #   STATIC_DOCK=1                 prepend one static-dock sanity cell per arm
 #   SWEEP_TAG=<tag>               reuse a tag to RESUME
 #   DRY_RUN=1                     list the cells and exit without launching anything
-# Per-cell timing passes through: READY_TIMEOUT, DOCK_TIMEOUT, SWAY_AMP.
+# Per-cell timing passes through: READY_TIMEOUT, DOCK_TIMEOUT (simulation seconds),
+# WALL_GUARD, SWAY_AMP. MAX_CELL_WALL (default 2400 s) kills a stuck cell.
+#
+# Stopping from outside: the script writes its pid to $WS/bags/<SWEEP_TAG>.pid, so
+#   kill -TERM "$(cat $WS/bags/<SWEEP_TAG>.pid)"
+# stops it and tears down the running cell. Do not signal the shell that launched it
+# (a `bash -ic` wrapper matches the script name in pgrep -f and ignores TERM).
 #
 # WARNING: each cell pkills gazebo/ardusub on teardown. Do not run other sims meanwhile.
 set -uo pipefail
@@ -39,6 +45,7 @@ phases_for(){  # period -> space-separated start phases
 }
 
 log(){ echo "[sweep $(date +%H:%M:%S)] $*"; }
+PIDFILE="$WS/bags/${TAG}.pid"
 
 # Stopping the sweep by pid (kill <pid>, the realistic unattended stop) must not
 # orphan the running cell: forward the signal to the child driver and wait for its
@@ -48,12 +55,14 @@ CHILD=""
 on_signal(){
   log "interrupted, stopping the running cell"
   if [ -n "$CHILD" ]; then kill -TERM "$CHILD" 2>/dev/null; wait "$CHILD" 2>/dev/null; fi
+  rm -f "$PIDFILE"
   exit 130
 }
 trap on_signal INT TERM
 if [ "${DRY_RUN:-0}" != "1" ]; then
   mkdir -p "$WS/bags"
   [ -f "$CSV" ] || echo "label,arm,dock,period,phase,nav,outcome,bag" > "$CSV"
+  echo $$ > "$PIDFILE"
 fi
 
 run_one(){  # arm nav dock period phase
@@ -78,7 +87,34 @@ run_one(){  # arm nav dock period phase
   # trap then tears down the sim stack it started under setsid.
   env "${extra[@]}" "$AUTO" "$period" "$arm" "$phase" "$TAG" "$nav" > "$WS/bags/${label}.log" 2>&1 &
   CHILD=$!
-  wait "$CHILD"
+  # Cell watchdog: a cell that outlives MAX_CELL_WALL (default 40 min, several times
+  # a full trial) is stuck in something its own traps cannot escape (a hung ros2
+  # CLI call inside a command substitution held one cell for eight hours on
+  # 2026-09-21). Kill its whole tree and the sim stack, then move on; the cell has
+  # no finalised bag, so the next resume reruns it.
+  local t_cell=$SECONDS
+  while kill -0 "$CHILD" 2>/dev/null; do
+    if [ $((SECONDS - t_cell)) -ge "${MAX_CELL_WALL:-2400}" ]; then
+      log "CELL KILLED $label after $((SECONDS - t_cell))s wall"
+      # First give the driver its own teardown: TERM reaches its trap once the hung
+      # foreground call is killed. Only if that does not clear the stack in a minute
+      # replicate teardown() here: the same kill list, the DDS shared-memory files
+      # and ArduSub's port, so the next cell never starts on this cell's debris.
+      pkill -KILL -f "ros2 topic ech[o]|ros2 bag reinde[x]" 2>/dev/null
+      kill -TERM "$CHILD" 2>/dev/null
+      for _ in $(seq 1 12); do kill -0 "$CHILD" 2>/dev/null || break; sleep 5; done
+      pkill -KILL -P "$CHILD" 2>/dev/null; kill -KILL "$CHILD" 2>/dev/null
+      pkill -9 -f "gz sim" 2>/dev/null; pkill -9 -f "ardusub" 2>/dev/null; pkill -9 -f "ros2 launch" 2>/dev/null
+      pkill -9 -f "parameter_bridge|mavros_node|ros2 topic|ros2 bag|ruby.*gz" 2>/dev/null
+      pkill -9 -f "dock_pose_filter|led_mock|aruco_|marker_publisher|coarse_approach|fine_align|docking_fsm|nav_error|oracle_dock" 2>/dev/null
+      rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null
+      for _ in $(seq 1 30); do awk 'NR>1{print $2}' /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -qiE ':1680$' || break; sleep 1; done
+      sleep 5
+      break
+    fi
+    sleep 5
+  done
+  wait "$CHILD" 2>/dev/null
   CHILD=""
   local out; out=$(grep "^RESULT" "$WS/bags/${label}.log" | tail -1)
   local outcome; outcome=$(awk '{print $3}' <<< "$out"); outcome=${outcome:-NORUN}
@@ -99,4 +135,5 @@ for arm in "${ARMS[@]}"; do
   done
 done
 log "sweep planned/done: $n cells -> $CSV"
+rm -f "$PIDFILE"
 [ "${DRY_RUN:-0}" = "1" ] || { column -t -s, "$CSV" 2>/dev/null || cat "$CSV"; }
