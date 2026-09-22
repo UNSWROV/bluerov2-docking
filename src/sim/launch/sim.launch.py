@@ -41,6 +41,18 @@ def generate_launch_description():
             "' == 'oracle' else '/perception/dock_pose_filtered/velocity'",
         ]
     )
+    # Navigation error (#69): when a level is set the injector runs and the TF relay
+    # reads its output instead of the ground-truth odometry.
+    nav_error_on = PythonExpression(
+        ["'", LaunchConfiguration("nav_error_level"), "' != 'none'"]
+    )
+    robot_odom_topic = PythonExpression(
+        [
+            "'/nav/odometry' if '",
+            LaunchConfiguration("nav_error_level"),
+            "' != 'none' else '/model/bluerov2_heavy/odometry'",
+        ]
+    )
     return LaunchDescription(
         [
             DeclareLaunchArgument("use_docking_rviz", default_value="false"),
@@ -69,11 +81,20 @@ def generate_launch_description():
             # Filter regime, forwarded to aruco.launch.py. "sway" = CV filter + ff
             # (method); "static" = velocity pinned, ff off (baseline). For ablation.
             DeclareLaunchArgument("process_noise_regime", default_value="sway"),
+            # the fix arm (C): velocity-closed feedforward in the controllers and a
+            # bounded velocity state in the filter; defaults are the original method
+            DeclareLaunchArgument("feedforward_mode", default_value="open_loop"),
+            DeclareLaunchArgument("stale_velocity_hold_s", default_value="0.0"),
+            DeclareLaunchArgument("stale_velocity_decay_s", default_value="1.0"),
             # Sway-regime WNA density sigma_a; forwarded to aruco.launch.py (#36 trade study).
             DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
             # Feedforward source: "filter" (the CV filter's velocity state) or "oracle"
             # (ground-truth dock velocity, diagnostic arm D, #68).
             DeclareLaunchArgument("feedforward_source", default_value="filter"),
+            # Navigation-error level injected into the odometry every node sees
+            # (none | low | medium | high, #69). Ground truth stays on the original topic.
+            DeclareLaunchArgument("nav_error_level", default_value="none"),
+            DeclareLaunchArgument("nav_error_seed", default_value="0"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -134,12 +155,25 @@ def generate_launch_description():
                 ],
                 output="screen",
             ),
+            Node(
+                package="perception",
+                executable="nav_error_injector",
+                name="nav_error_injector",
+                parameters=[{
+                    "use_sim_time": True,
+                    "level": LaunchConfiguration("nav_error_level"),
+                    "seed": LaunchConfiguration("nav_error_seed"),
+                }],
+                condition=IfCondition(nav_error_on),
+                output="screen",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
                         [FindPackageShare("perception"), "launch/led_mock.launch.py"]
                     )
                 ),
+                launch_arguments={"robot_odom_topic": robot_odom_topic}.items(),
                 condition=IfCondition(LaunchConfiguration("use_mock_led")),
             ),
             IncludeLaunchDescription(
@@ -152,6 +186,8 @@ def generate_launch_description():
                     "target_frame": "map",
                     "process_noise_regime": LaunchConfiguration("process_noise_regime"),
                     "sway_sigma_a": LaunchConfiguration("sway_sigma_a"),
+                    "stale_velocity_hold_s": LaunchConfiguration("stale_velocity_hold_s"),
+                    "stale_velocity_decay_s": LaunchConfiguration("stale_velocity_decay_s"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_aruco")),
             ),
@@ -193,6 +229,8 @@ def generate_launch_description():
                     "target_frame": "map",
                     "cmd_vel_topic": cmd_vel_topic,
                     "dock_velocity_topic": dock_velocity_topic,
+                    "feedforward_mode": LaunchConfiguration("feedforward_mode"),
+                    "robot_odom_topic": robot_odom_topic,
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),
@@ -206,6 +244,8 @@ def generate_launch_description():
                     "target_frame": "map",
                     "cmd_vel_topic": cmd_vel_topic,
                     "dock_velocity_topic": dock_velocity_topic,
+                    "feedforward_mode": LaunchConfiguration("feedforward_mode"),
+                    "robot_odom_topic": robot_odom_topic,
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),
