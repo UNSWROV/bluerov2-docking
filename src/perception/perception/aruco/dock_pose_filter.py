@@ -75,6 +75,12 @@ class DockPoseFilter(Node):
         # stability-vs-tracking trade study (#36): high tracks a fast dock but
         # amplifies ego-motion leakage; low stiffens toward the static filter.
         self.declare_parameter("sway_sigma_a", 0.16)
+        # Bounded velocity state during blackout (the estimator half of the fix arm):
+        # once no update has been accepted for stale_velocity_hold_s, the velocity
+        # state decays with time constant stale_velocity_decay_s so the filter
+        # cannot dead-reckon indefinitely. hold <= 0 disables it (arms A, B, D).
+        self.declare_parameter("stale_velocity_hold_s", 0.0)
+        self.declare_parameter("stale_velocity_decay_s", 1.0)
 
         _max_speed = (
             self.get_parameter("max_dock_speed_m_s").get_parameter_value().double_value
@@ -300,6 +306,19 @@ class DockPoseFilter(Node):
                 .double_value,
             )
             self._kf.predict(dt=dt, process_noise=q)
+            hold = (
+                self.get_parameter("stale_velocity_hold_s")
+                .get_parameter_value()
+                .double_value
+            )
+            if hold > 0.0 and self._last_update_t is not None:
+                if now - self._last_update_t > hold:
+                    decay = (
+                        self.get_parameter("stale_velocity_decay_s")
+                        .get_parameter_value()
+                        .double_value
+                    )
+                    self._kf.decay_velocity(math.exp(-dt / max(decay, 1e-3)))
 
             target_frame = (
                 self.get_parameter("target_frame").get_parameter_value().string_value
