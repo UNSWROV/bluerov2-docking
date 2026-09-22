@@ -36,6 +36,12 @@ install(PROGRAMS
   RENAME dock_visualizer
 )
 
+install(PROGRAMS
+  perception/nav_error_injector.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME nav_error_injector
+)
+
 install(DIRECTORY launch/
   DESTINATION share/${PROJECT_NAME}/launch
 )
@@ -43,6 +49,7 @@ install(DIRECTORY launch/
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_transforms perception/utils/tests/test_transforms.py)
+  ament_add_pytest_test(test_nav_error perception/utils/tests/test_nav_error.py)
   ament_add_pytest_test(test_geometry perception/aruco/tests/test_geometry.py)
   ament_add_pytest_test(test_dock_layout perception/aruco/tests/test_dock_layout.py)
   ament_add_pytest_test(test_noise_model perception/aruco/tests/test_noise_model.py)
