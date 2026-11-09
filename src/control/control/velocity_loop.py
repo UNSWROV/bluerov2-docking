@@ -90,6 +90,20 @@ MODES = (OPEN_LOOP, VELOCITY_LOOP)
 FALLBACK_GAIN = 1.0 / 2.7
 
 
+def position_gain_scale(velocity_loop_on: bool, scale: float) -> float:
+    """Factor applied to the linear position gains in velocity_loop mode.
+
+    In open-loop mode the position feedback is an effort, so the plant gain g sits
+    between it and the vehicle velocity; in velocity_loop mode the same output is a
+    velocity reference through a near-unity inner loop, which lowers the position
+    loop's bandwidth by g. Scaling the gains by g restores it (arm F); 1 or a
+    non-positive value keeps the gains of the open-loop arms (arm C).
+    """
+    if not velocity_loop_on or scale <= 0.0:
+        return 1.0
+    return float(scale)
+
+
 def open_loop_ff_gain(velocity_loop_on: bool, default_gain: float, override: float) -> float:
     """Gain that converts the dock velocity into command units in open-loop mode.
 

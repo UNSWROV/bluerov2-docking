@@ -35,6 +35,7 @@ from control.velocity_loop import (
     effort_from_setpoint,
     MODES,
     open_loop_ff_gain,
+    position_gain_scale,
     VELOCITY_LOOP,
     VelocityLoop,
     VelocityLoopParams,
@@ -107,6 +108,9 @@ class CoarseApproach(Node):
         # Open-loop feedforward gain override (the rescaled open-loop arm, arm E):
         # negative keeps the controller's own ff_velocity_gain.
         self.declare_parameter("ff_gain_override", -1.0)
+        # position-gain scale in velocity_loop mode (arm F restores the outer-loop
+        # bandwidth with g = 2.7); 1.0 keeps arm C as run first
+        self.declare_parameter("vloop_position_gain_scale", 1.0)
         mode = self.get_parameter("feedforward_mode").get_parameter_value().string_value
         if mode not in MODES:
             raise ValueError(f"feedforward_mode must be one of {MODES}, got {mode!r}")
@@ -187,13 +191,14 @@ class CoarseApproach(Node):
 
     def _params(self) -> PbvsParams:
         g = lambda n: self.get_parameter(n).get_parameter_value().double_value
+        k = position_gain_scale(self._velocity_loop_on, g("vloop_position_gain_scale"))
         return PbvsParams(
-            kp_surge=g("kp_surge"),
-            kd_surge=g("kd_surge"),
-            kp_sway=g("kp_sway"),
-            kd_sway=g("kd_sway"),
-            kp_heave=g("kp_heave"),
-            kd_heave=g("kd_heave"),
+            kp_surge=k * g("kp_surge"),
+            kd_surge=k * g("kd_surge"),
+            kp_sway=k * g("kp_sway"),
+            kd_sway=k * g("kd_sway"),
+            kp_heave=k * g("kp_heave"),
+            kd_heave=k * g("kd_heave"),
             kp_yaw=g("kp_yaw"),
             kd_yaw=g("kd_yaw"),
             v_max_surge=g("v_max_surge"),
