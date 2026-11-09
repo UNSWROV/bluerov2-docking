@@ -7,7 +7,7 @@
 #
 # Grid via env (defaults shown). Periods start HIGH (easy) and descend so a partial
 # run covers the interesting long-period end first:
-#   ARMS="A B"                    A reactive | B original ff | C fix | D oracle | E rescaled open loop | F fix, matched outer loop | G F plus model feedforward | H F with speed caps matched
+#   ARMS="A B"                    A reactive | B original ff | Bgt oracle | C velocity loop with model ff | Cnone, Cgains, Cnoff ablation | D rescaled open loop
 #   NAV_LEVELS="none"             none | low | medium | high (#69)
 #   PERIODS="20 16 12 10 8 6"     sway periods (s)
 #   PHASES="0.0 2.094 4.189"      explicit start phases (rad), or

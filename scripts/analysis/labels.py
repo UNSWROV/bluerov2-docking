@@ -21,15 +21,15 @@ _RE = re.compile(
 # Display names for the arms, old regime names included.
 ARM_NAMES = {
     "static": "A reactive",
-    "sway": "B CV + feedforward",
+    "sway": "B original feedforward",
     "A": "A reactive",
-    "B": "B CV + feedforward",
-    "C": "C fix",
-    "D": "D oracle",
-    "E": "E rescaled open loop",
-    "F": "F velocity-closed, matched outer loop",
-    "G": "G velocity-closed, matched, model feedforward",
-    "H": "H velocity-closed, matched, no feedforward",
+    "B": "B original feedforward",
+    "Bgt": "B with the true dock velocity (oracle)",
+    "Cnone": "C before unit conversion",
+    "Cgains": "C with position gains converted only",
+    "Cnoff": "C without the model feedforward",
+    "C": "C velocity-closed feedforward",
+    "D": "D rescaled open loop",
 }
 
 
