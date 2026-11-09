@@ -33,8 +33,11 @@
       </graded_buoyancy>
     </plugin>
 
+    <!-- Both environment models are vendored in this package (issue #86): a Fuel URI
+         is resolved online at world load, which stalled or failed launches whenever the
+         container could not reach fuel.gazebosim.org. -->
     <include>
-      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Sun</uri>
+      <uri>model://sun</uri>
     </include>
 
     <include>
@@ -43,9 +46,7 @@
     </include>
 
     <include>
-      <uri>
-        https://fuel.gazebosim.org/1.0/OpenRobotics/models/Coast Water
-      </uri>
+      <uri>model://coast_water</uri>
       <pose>0 0 0 0 0 0</pose>
     </include>
 
