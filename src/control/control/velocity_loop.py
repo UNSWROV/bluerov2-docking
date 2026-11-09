@@ -90,6 +90,21 @@ MODES = (OPEN_LOOP, VELOCITY_LOOP)
 FALLBACK_GAIN = 1.0 / 2.7
 
 
+def open_loop_ff_gain(velocity_loop_on: bool, default_gain: float, override: float) -> float:
+    """Gain that converts the dock velocity into command units in open-loop mode.
+
+    The original method uses each controller's own gain (coarse 0.6, fine 1.0). A
+    non-negative override replaces it, which is how the rescaled open-loop arm sets
+    1 / g in both phases. In velocity_loop mode the dock velocity is a physical
+    setpoint and the gain is 1 regardless.
+    """
+    if velocity_loop_on:
+        return 1.0
+    if override >= 0.0:
+        return float(override)
+    return float(default_gain)
+
+
 def effort_from_setpoint(
     loop: VelocityLoop,
     v_ref: np.ndarray,

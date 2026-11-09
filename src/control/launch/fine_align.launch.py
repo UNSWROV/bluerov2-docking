@@ -23,6 +23,9 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "robot_odom_topic", default_value="/model/bluerov2_heavy/odometry"
             ),
+            # open-loop feedforward gain override; negative keeps the controller's
+            # own gain (the rescaled open-loop arm E passes 1 / plant gain)
+            DeclareLaunchArgument("ff_gain_override", default_value="-1.0"),
             Node(
                 package="control",
                 executable="fine_align_node",
@@ -35,6 +38,7 @@ def generate_launch_description():
                         "target_frame": LaunchConfiguration("target_frame"),
                         "feedforward_mode": LaunchConfiguration("feedforward_mode"),
                         "robot_odom_topic": LaunchConfiguration("robot_odom_topic"),
+                        "ff_gain_override": LaunchConfiguration("ff_gain_override"),
                     },
                 ],
                 remappings=[

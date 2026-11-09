@@ -26,6 +26,7 @@ ARM_NAMES = {
     "B": "B CV + feedforward",
     "C": "C fix",
     "D": "D oracle",
+    "E": "E rescaled open loop",
 }
 
 

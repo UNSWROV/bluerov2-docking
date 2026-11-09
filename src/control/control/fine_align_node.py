@@ -30,11 +30,12 @@ import numpy as np
 from nav_msgs.msg import Odometry
 
 from control.velocity_loop import (
+    effort_from_setpoint,
     MODES,
+    open_loop_ff_gain,
     VELOCITY_LOOP,
     VelocityLoop,
     VelocityLoopParams,
-    effort_from_setpoint,
 )
 
 
@@ -93,6 +94,9 @@ class FineAlign(Node):
         # effort per m/s applied when navigation velocity is missing (1 / plant gain)
         self.declare_parameter("vloop_fallback_gain", 1.0 / 2.7)
         self.declare_parameter("robot_odom_topic", "/model/bluerov2_heavy/odometry")
+        # Open-loop feedforward gain override (the rescaled open-loop arm, arm E):
+        # negative keeps the fine controller's unit gain.
+        self.declare_parameter("ff_gain_override", -1.0)
         mode = self.get_parameter("feedforward_mode").get_parameter_value().string_value
         if mode not in MODES:
             raise ValueError(f"feedforward_mode must be one of {MODES}, got {mode!r}")
@@ -344,7 +348,12 @@ class FineAlign(Node):
             ff_vel_body = None
         else:
             lin = self._latest_twist.twist.twist.linear
-            ff_vel_body = guidance_lib.world_to_body(
+            ff_gain = open_loop_ff_gain(
+                self._velocity_loop_on,
+                1.0,
+                self.get_parameter("ff_gain_override").get_parameter_value().double_value,
+            )
+            ff_vel_body = ff_gain * guidance_lib.world_to_body(
                 (lin.x, lin.y, lin.z),
                 (rov.rotation.x, rov.rotation.y, rov.rotation.z, rov.rotation.w),
             )

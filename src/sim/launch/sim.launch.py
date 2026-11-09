@@ -86,6 +86,9 @@ def generate_launch_description():
             DeclareLaunchArgument("feedforward_mode", default_value="open_loop"),
             DeclareLaunchArgument("stale_velocity_hold_s", default_value="0.0"),
             DeclareLaunchArgument("stale_velocity_decay_s", default_value="1.0"),
+            # the rescaled open-loop arm (E): open_loop feedforward with the gain set
+            # to 1 / plant gain in both phases; negative keeps each controller's own
+            DeclareLaunchArgument("ff_gain_override", default_value="-1.0"),
             # Sway-regime WNA density sigma_a; forwarded to aruco.launch.py (#36 trade study).
             DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
             # Feedforward source: "filter" (the CV filter's velocity state) or "oracle"
@@ -236,6 +239,7 @@ def generate_launch_description():
                     "dock_velocity_topic": dock_velocity_topic,
                     "feedforward_mode": LaunchConfiguration("feedforward_mode"),
                     "robot_odom_topic": robot_odom_topic,
+                    "ff_gain_override": LaunchConfiguration("ff_gain_override"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),
@@ -251,6 +255,7 @@ def generate_launch_description():
                     "dock_velocity_topic": dock_velocity_topic,
                     "feedforward_mode": LaunchConfiguration("feedforward_mode"),
                     "robot_odom_topic": robot_odom_topic,
+                    "ff_gain_override": LaunchConfiguration("ff_gain_override"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),
