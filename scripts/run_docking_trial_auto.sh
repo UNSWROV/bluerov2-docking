@@ -36,7 +36,8 @@ LABEL="${4:-auto}_${ARM}_${DOCK}_p${PERIOD}_ph${PHASE}${NAVTAG}"
 # open-loop feedforward; C the fix (#67): velocity-closed feedforward in the controllers
 # and a bounded velocity state in the filter; D the oracle (#68, feedforward_source);
 # E the rescaled open-loop law, B with the feedforward gain 1 / 2.7 in both phases;
-# F arm C with its position gains scaled by the plant gain 2.7 (matched outer loop).
+# F arm C with its position gains scaled by the plant gain 2.7 (matched outer loop);
+# G arm F plus a model feedforward of 1 / 2.7 inside the velocity loop.
 # Every arm passes the navigation-error level (#69). ros2 launch silently ignores
 # unknown key:=value pairs, so each argument here must exist in sim.launch.py.
 case "$ARM" in
@@ -46,7 +47,8 @@ case "$ARM" in
   D) ARM_ARGS="process_noise_regime:=sway feedforward_source:=oracle" ;;
   E) ARM_ARGS="process_noise_regime:=sway ff_gain_override:=0.37" ;;
   F) ARM_ARGS="process_noise_regime:=sway feedforward_mode:=velocity_loop stale_velocity_hold_s:=1.0 stale_velocity_decay_s:=1.0 vloop_position_gain_scale:=2.7" ;;
-  *) echo "unknown arm: $ARM (A|B|C|D|E|F)"; exit 2 ;;
+  G) ARM_ARGS="process_noise_regime:=sway feedforward_mode:=velocity_loop stale_velocity_hold_s:=1.0 stale_velocity_decay_s:=1.0 vloop_position_gain_scale:=2.7 vloop_kff:=0.37" ;;
+  *) echo "unknown arm: $ARM (A|B|C|D|E|F|G)"; exit 2 ;;
 esac
 [ "$NAV" != "none" ] && ARM_ARGS="$ARM_ARGS nav_error_level:=$NAV"
 # NAV_SIGMA_NP / NAV_SIGMA_NV (m, m/s): white noise on the injected solution

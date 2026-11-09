@@ -92,6 +92,8 @@ def generate_launch_description():
             # arm F: the velocity-closed arm with its position gains scaled by the plant
             # gain, so the outer loop keeps the bandwidth of the open-loop arms
             DeclareLaunchArgument("vloop_position_gain_scale", default_value="1.0"),
+            # arm G: arm F plus a model feedforward of 1 / plant gain inside the velocity loop
+            DeclareLaunchArgument("vloop_kff", default_value="0.0"),
             # Sway-regime WNA density sigma_a; forwarded to aruco.launch.py (#36 trade study).
             DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
             # Feedforward source: "filter" (the CV filter's velocity state) or "oracle"
@@ -244,6 +246,7 @@ def generate_launch_description():
                     "robot_odom_topic": robot_odom_topic,
                     "ff_gain_override": LaunchConfiguration("ff_gain_override"),
                     "vloop_position_gain_scale": LaunchConfiguration("vloop_position_gain_scale"),
+                    "vloop_kff": LaunchConfiguration("vloop_kff"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),
@@ -261,6 +264,7 @@ def generate_launch_description():
                     "robot_odom_topic": robot_odom_topic,
                     "ff_gain_override": LaunchConfiguration("ff_gain_override"),
                     "vloop_position_gain_scale": LaunchConfiguration("vloop_position_gain_scale"),
+                    "vloop_kff": LaunchConfiguration("vloop_kff"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),

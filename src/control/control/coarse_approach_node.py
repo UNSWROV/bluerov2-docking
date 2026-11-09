@@ -111,6 +111,9 @@ class CoarseApproach(Node):
         # position-gain scale in velocity_loop mode (arm F restores the outer-loop
         # bandwidth with g = 2.7); 1.0 keeps arm C as run first
         self.declare_parameter("vloop_position_gain_scale", 1.0)
+        # model feedforward inside the velocity loop, effort per m/s of setpoint
+        # (arm G passes 1 / g = 0.37); 0 keeps the pure PI of arms C and F
+        self.declare_parameter("vloop_kff", 0.0)
         mode = self.get_parameter("feedforward_mode").get_parameter_value().string_value
         if mode not in MODES:
             raise ValueError(f"feedforward_mode must be one of {MODES}, got {mode!r}")
@@ -119,6 +122,7 @@ class CoarseApproach(Node):
             VelocityLoopParams(
                 kp=self.get_parameter("vloop_kp").get_parameter_value().double_value,
                 ki=self.get_parameter("vloop_ki").get_parameter_value().double_value,
+                kff=self.get_parameter("vloop_kff").get_parameter_value().double_value,
             )
         )
         self._vloop_effort_max = VelocityLoopParams().effort_max

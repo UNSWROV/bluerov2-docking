@@ -111,3 +111,44 @@ def test_position_gain_scale_applies_only_in_velocity_loop_mode():
     assert position_gain_scale(True, 2.7) == 2.7
     assert position_gain_scale(True, 0.0) == 1.0
     assert position_gain_scale(True, -1.0) == 1.0
+
+
+def _simulate(loop, v_ref, g, T, bias, dt=0.05, n=400):
+    """First-order plant g / (1 + sT) driven by the loop; the loop sees v_true + bias."""
+    import numpy as np
+    v_true = np.zeros(3)
+    for _ in range(n):
+        u = loop.step(v_ref, v_true + bias, dt)
+        v_true = v_true + dt / T * (g * u - v_true)
+    return v_true
+
+
+def test_model_feedforward_passes_the_setpoint_through_at_zero_error():
+    import numpy as np
+    from control.velocity_loop import VelocityLoop, VelocityLoopParams
+
+    loop = VelocityLoop(VelocityLoopParams(kff=1.0 / 2.7))
+    out = loop.step(np.array([0.0, 0.1, 0.0]), np.array([0.0, 0.1, 0.0]), 0.05)
+    assert abs(out[1] - 0.1 / 2.7) < 1e-9 and out[0] == 0.0 and out[2] == 0.0
+
+
+def test_model_feedforward_keeps_bias_cancellation_and_survives_a_wrong_plant_gain():
+    import numpy as np
+    from control.velocity_loop import VelocityLoop, VelocityLoopParams
+
+    v_ref = np.array([0.0, 0.1, 0.0]); bias = np.array([0.0, 0.03, 0.0])
+    for g in (2.7, 2.0, 3.5):
+        for kff in (0.0, 1.0 / 2.7):
+            v_true = _simulate(VelocityLoop(VelocityLoopParams(kff=kff)), v_ref, g, 0.4, bias)
+            # the loop regulates the measured velocity (true + bias) to the setpoint
+            assert abs(v_true[1] - (v_ref[1] - bias[1])) < 2e-3, (g, kff, v_true)
+
+
+def test_model_feedforward_reaches_the_setpoint_faster():
+    import numpy as np
+    from control.velocity_loop import VelocityLoop, VelocityLoopParams
+
+    v_ref = np.array([0.0, 0.1, 0.0]); zero = np.zeros(3)
+    v_pi = _simulate(VelocityLoop(VelocityLoopParams()), v_ref, 2.7, 0.4, zero, n=10)
+    v_ff = _simulate(VelocityLoop(VelocityLoopParams(kff=1.0 / 2.7)), v_ref, 2.7, 0.4, zero, n=10)
+    assert v_ff[1] > v_pi[1]
