@@ -28,7 +28,7 @@ ARM_NAMES = {
     "D": "D oracle",
     "E": "E rescaled open loop",
     "F": "F velocity-closed, matched outer loop",
-    "G": "G velocity-closed with model feedforward",
+    "G": "G velocity-closed, matched, model feedforward",
 }
 
 

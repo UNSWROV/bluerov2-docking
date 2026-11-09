@@ -94,6 +94,9 @@ def generate_launch_description():
             DeclareLaunchArgument("vloop_position_gain_scale", default_value="1.0"),
             # arm G: arm F plus a model feedforward of 1 / plant gain inside the velocity loop
             DeclareLaunchArgument("vloop_kff", default_value="0.0"),
+            # arm G also scales the speed caps and the approach ramp by the plant gain, so the
+            # closed-loop arms close at the speed the open-loop arms were tuned for
+            DeclareLaunchArgument("vloop_speed_scale", default_value="1.0"),
             # Sway-regime WNA density sigma_a; forwarded to aruco.launch.py (#36 trade study).
             DeclareLaunchArgument("sway_sigma_a", default_value="0.16"),
             # Feedforward source: "filter" (the CV filter's velocity state) or "oracle"
@@ -247,6 +250,7 @@ def generate_launch_description():
                     "ff_gain_override": LaunchConfiguration("ff_gain_override"),
                     "vloop_position_gain_scale": LaunchConfiguration("vloop_position_gain_scale"),
                     "vloop_kff": LaunchConfiguration("vloop_kff"),
+                    "vloop_speed_scale": LaunchConfiguration("vloop_speed_scale"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),
@@ -265,6 +269,7 @@ def generate_launch_description():
                     "ff_gain_override": LaunchConfiguration("ff_gain_override"),
                     "vloop_position_gain_scale": LaunchConfiguration("vloop_position_gain_scale"),
                     "vloop_kff": LaunchConfiguration("vloop_kff"),
+                    "vloop_speed_scale": LaunchConfiguration("vloop_speed_scale"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("use_control")),
             ),
