@@ -95,6 +95,9 @@ def generate_launch_description():
             # (none | low | medium | high, #69). Ground truth stays on the original topic.
             DeclareLaunchArgument("nav_error_level", default_value="none"),
             DeclareLaunchArgument("nav_error_seed", default_value="0"),
+            # white noise on the injected navigation solution; -1 keeps the level default
+            DeclareLaunchArgument("nav_error_sigma_np", default_value="-1.0"),
+            DeclareLaunchArgument("nav_error_sigma_nv", default_value="-1.0"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -163,6 +166,8 @@ def generate_launch_description():
                     "use_sim_time": True,
                     "level": LaunchConfiguration("nav_error_level"),
                     "seed": LaunchConfiguration("nav_error_seed"),
+                    "sigma_np": ParameterValue(LaunchConfiguration("nav_error_sigma_np"), value_type=float),
+                    "sigma_nv": ParameterValue(LaunchConfiguration("nav_error_sigma_nv"), value_type=float),
                 }],
                 condition=IfCondition(nav_error_on),
                 output="screen",
