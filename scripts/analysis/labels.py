@@ -27,6 +27,7 @@ ARM_NAMES = {
     "C": "C fix",
     "D": "D oracle",
     "E": "E rescaled open loop",
+    "F": "F velocity-closed, matched outer loop",
 }
 
 

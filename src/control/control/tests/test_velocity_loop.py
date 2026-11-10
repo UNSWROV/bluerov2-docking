@@ -101,3 +101,13 @@ def test_open_loop_ff_gain_override():
     assert open_loop_ff_gain(False, 0.6, 0.0) == 0.0
     # the velocity loop treats the dock velocity as a physical setpoint
     assert open_loop_ff_gain(True, 0.6, 0.37) == 1.0
+
+
+def test_position_gain_scale_applies_only_in_velocity_loop_mode():
+    from control.velocity_loop import position_gain_scale
+
+    assert position_gain_scale(False, 2.7) == 1.0
+    assert position_gain_scale(True, 1.0) == 1.0
+    assert position_gain_scale(True, 2.7) == 2.7
+    assert position_gain_scale(True, 0.0) == 1.0
+    assert position_gain_scale(True, -1.0) == 1.0

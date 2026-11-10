@@ -26,6 +26,8 @@ def generate_launch_description():
             # open-loop feedforward gain override; negative keeps the controller's
             # own gain (the rescaled open-loop arm E passes 1 / plant gain)
             DeclareLaunchArgument("ff_gain_override", default_value="-1.0"),
+            # position-gain scale in velocity_loop mode (arm F passes the plant gain)
+            DeclareLaunchArgument("vloop_position_gain_scale", default_value="1.0"),
             Node(
                 package="control",
                 executable="coarse_approach_node",
@@ -39,6 +41,7 @@ def generate_launch_description():
                         "feedforward_mode": LaunchConfiguration("feedforward_mode"),
                         "robot_odom_topic": LaunchConfiguration("robot_odom_topic"),
                         "ff_gain_override": LaunchConfiguration("ff_gain_override"),
+                        "vloop_position_gain_scale": LaunchConfiguration("vloop_position_gain_scale"),
                     },
                 ],
                 remappings=[
