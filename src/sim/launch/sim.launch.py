@@ -103,12 +103,15 @@ def generate_launch_description():
             # (ground-truth dock velocity, diagnostic arm D, #68).
             DeclareLaunchArgument("feedforward_source", default_value="filter"),
             # Navigation-error level injected into the odometry every node sees
-            # (none | low | medium | high, #69). Ground truth stays on the original topic.
+            # (none | white | low | medium | high, #69; white = no bias, #97). Ground truth stays on the original topic.
             DeclareLaunchArgument("nav_error_level", default_value="none"),
             DeclareLaunchArgument("nav_error_seed", default_value="0"),
             # white noise on the injected navigation solution; -1 keeps the level default
             DeclareLaunchArgument("nav_error_sigma_np", default_value="-1.0"),
             DeclareLaunchArgument("nav_error_sigma_nv", default_value="-1.0"),
+            # update rate of the injected velocity measurement, held between updates;
+            # 0 = every odometry sample (#97)
+            DeclareLaunchArgument("nav_error_velocity_rate_hz", default_value="0.0"),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -179,6 +182,7 @@ def generate_launch_description():
                     "seed": LaunchConfiguration("nav_error_seed"),
                     "sigma_np": ParameterValue(LaunchConfiguration("nav_error_sigma_np"), value_type=float),
                     "sigma_nv": ParameterValue(LaunchConfiguration("nav_error_sigma_nv"), value_type=float),
+                    "velocity_rate_hz": ParameterValue(LaunchConfiguration("nav_error_velocity_rate_hz"), value_type=float),
                 }],
                 condition=IfCondition(nav_error_on),
                 output="screen",
