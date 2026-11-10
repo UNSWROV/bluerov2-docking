@@ -86,3 +86,18 @@ def test_fallback_scales_the_setpoint_by_the_plant_gain_and_resets_the_loop():
     out = effort_from_setpoint(loop, np.array([0.0, 0.08, 0.0]), None, 0.05)
     assert np.isclose(out[1], 0.08 * FALLBACK_GAIN)
     assert np.all(loop.integral == 0.0)
+
+
+def test_open_loop_ff_gain_override():
+    from control.velocity_loop import open_loop_ff_gain
+
+    # the original method keeps each controller's own gain
+    assert open_loop_ff_gain(False, 0.6, -1.0) == 0.6
+    assert open_loop_ff_gain(False, 1.0, -1.0) == 1.0
+    # the rescaled arm replaces it in both phases
+    assert open_loop_ff_gain(False, 0.6, 0.37) == 0.37
+    assert open_loop_ff_gain(False, 1.0, 0.37) == 0.37
+    # a zero override switches the feedforward off, which is a legal arm
+    assert open_loop_ff_gain(False, 0.6, 0.0) == 0.0
+    # the velocity loop treats the dock velocity as a physical setpoint
+    assert open_loop_ff_gain(True, 0.6, 0.37) == 1.0

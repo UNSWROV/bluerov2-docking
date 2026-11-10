@@ -32,11 +32,12 @@ from interfaces.msg import FilterHealth, CoarseApproachStatus, DockingState
 from nav_msgs.msg import Odometry
 
 from control.velocity_loop import (
+    effort_from_setpoint,
     MODES,
+    open_loop_ff_gain,
     VELOCITY_LOOP,
     VelocityLoop,
     VelocityLoopParams,
-    effort_from_setpoint,
 )
 
 # Low-pass on the standoff-relative speed feeding the velocity-match handoff gate. The
@@ -103,6 +104,9 @@ class CoarseApproach(Node):
         # effort per m/s applied when navigation velocity is missing (1 / plant gain)
         self.declare_parameter("vloop_fallback_gain", 1.0 / 2.7)
         self.declare_parameter("robot_odom_topic", "/model/bluerov2_heavy/odometry")
+        # Open-loop feedforward gain override (the rescaled open-loop arm, arm E):
+        # negative keeps the controller's own ff_velocity_gain.
+        self.declare_parameter("ff_gain_override", -1.0)
         mode = self.get_parameter("feedforward_mode").get_parameter_value().string_value
         if mode not in MODES:
             raise ValueError(f"feedforward_mode must be one of {MODES}, got {mode!r}")
@@ -407,7 +411,9 @@ class CoarseApproach(Node):
             # velocity at the plant output instead of over-driving by the plant gain.
             # In velocity_loop mode the dock velocity is a physical setpoint, so the
             # gain conversion does not apply; only the distance ramp remains.
-            ff_gain = 1.0 if self._velocity_loop_on else gd("ff_velocity_gain")
+            ff_gain = open_loop_ff_gain(
+                self._velocity_loop_on, gd("ff_velocity_gain"), gd("ff_gain_override")
+            )
             ff_scale = ff_gain * ff_authority_ramp(
                 g.range_to_standoff_m, gd("ff_ramp_far_m"), gd("ff_ramp_near_m")
             )
