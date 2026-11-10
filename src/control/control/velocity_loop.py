@@ -15,8 +15,13 @@ integral time equal to T the open loop is kp g / (T s), a first-order closed
 loop with bandwidth kp g / T, placed below the plant corner 1 / T so the loop
 stays well damped. For g = 2.7, T = 0.4 s and a 2.0 rad/s bandwidth: kp = 0.30
 effort per m/s and ki = kp / T = 0.74 effort per m. On that plant the loop follows
-the 8 s sway at 0.93 amplitude with 19 degrees of lag and no step overshoot; the
+the 8 s sway at 0.93 amplitude with 21 degrees of lag and no step overshoot; the
 position feedback in the setpoint trims the remainder.
+
+A model feedforward kff (effort per m/s of setpoint, 1 / g when identified) can be
+added inside the loop: the setpoint then reaches the plant at once and the PI only
+corrects the model error and the navigation bias, so the loop's phase lag shrinks
+while an error in g becomes a transient the integral removes (arm G).
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ class VelocityLoopParams:
     ki: float = 0.74          # effort per m of integrated velocity error
     integral_max: float = 0.3  # bound on |ki * integral| per axis (anti-windup)
     effort_max: float = 0.5   # bound on the effort output per axis
+    kff: float = 0.0          # effort per m/s of setpoint, the model feedforward (1 / g); 0 = pure PI
 
 
 class VelocityLoop:
@@ -72,7 +78,7 @@ class VelocityLoop:
         e_max = p.effort_max if effort_max is None else max(float(effort_max), 1e-6)
         proposed = self._integral + err * dt
         i_term = np.clip(p.ki * proposed, -p.integral_max, p.integral_max)
-        raw = p.kp * err + i_term
+        raw = p.kff * v_ref + p.kp * err + i_term
         out = np.clip(raw, -e_max, e_max)
         saturated = (np.abs(raw) > e_max) & (np.sign(raw) == np.sign(err))
         self._integral = np.where(saturated, self._integral, i_term / p.ki if p.ki > 0 else 0.0)

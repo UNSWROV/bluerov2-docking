@@ -28,25 +28,31 @@ ARM="${2:-B}"
 PHASE="${3:-0.0}"
 NAV="${5:-none}"
 case "$ARM" in static) ARM=A;; sway) ARM=B;; esac
+# 2026-11 code letters, kept as aliases: the paper names read in the order of the argument
+case "$ARM" in E) ARM=D;; F) ARM=Cgains;; G) ARM=C;; H) ARM=Cnoff;; esac
 DOCK="sway"; { [ "$PERIOD" = "0" ] || [ "${DOCK_STATIC:-0}" = "1" ]; } && DOCK="static"
 NAVTAG=""; [ "$NAV" != "none" ] && NAVTAG="_nav${NAV}"
 LABEL="${4:-auto}_${ARM}_${DOCK}_p${PERIOD}_ph${PHASE}${NAVTAG}"
 
 # Arm -> launch arguments. A reactive (static regime, no feedforward); B the original
-# open-loop feedforward; C the fix (#67): velocity-closed feedforward in the controllers
-# and a bounded velocity state in the filter; D the oracle (#68, feedforward_source);
-# E the rescaled open-loop law, B with the feedforward gain 1 / 2.7 in both phases;
-# F arm C with its position gains scaled by the plant gain 2.7 (matched outer loop).
+# open-loop feedforward; Bgt the oracle, B fed the ground-truth dock velocity (#68); C the
+# velocity-closed feedforward with every unit converted and the model feedforward
+# 1 / 2.7 inside the loop (#67, #91, #93: position gains and speed caps scaled by the
+# plant gain 2.7, bounded velocity state); Cnone, Cgains and Cnoff are its ablation steps
+# (nothing converted; gains only; gains and caps but no model feedforward); D the
+# rescaled open-loop law, B with gain 1 / 2.7 (#89).
 # Every arm passes the navigation-error level (#69). ros2 launch silently ignores
 # unknown key:=value pairs, so each argument here must exist in sim.launch.py.
 case "$ARM" in
   A) ARM_ARGS="process_noise_regime:=static" ;;
   B) ARM_ARGS="process_noise_regime:=sway" ;;
-  C) ARM_ARGS="process_noise_regime:=sway feedforward_mode:=velocity_loop stale_velocity_hold_s:=1.0 stale_velocity_decay_s:=1.0" ;;
-  D) ARM_ARGS="process_noise_regime:=sway feedforward_source:=oracle" ;;
-  E) ARM_ARGS="process_noise_regime:=sway ff_gain_override:=0.37" ;;
-  F) ARM_ARGS="process_noise_regime:=sway feedforward_mode:=velocity_loop stale_velocity_hold_s:=1.0 stale_velocity_decay_s:=1.0 vloop_position_gain_scale:=2.7" ;;
-  *) echo "unknown arm: $ARM (A|B|C|D|E|F)"; exit 2 ;;
+  Bgt) ARM_ARGS="process_noise_regime:=sway feedforward_source:=oracle" ;;
+  Cnone) ARM_ARGS="process_noise_regime:=sway feedforward_mode:=velocity_loop stale_velocity_hold_s:=1.0 stale_velocity_decay_s:=1.0" ;;
+  Cgains) ARM_ARGS="process_noise_regime:=sway feedforward_mode:=velocity_loop stale_velocity_hold_s:=1.0 stale_velocity_decay_s:=1.0 vloop_position_gain_scale:=2.7" ;;
+  C) ARM_ARGS="process_noise_regime:=sway feedforward_mode:=velocity_loop stale_velocity_hold_s:=1.0 stale_velocity_decay_s:=1.0 vloop_position_gain_scale:=2.7 vloop_speed_scale:=2.7 vloop_kff:=0.37" ;;
+  Cnoff) ARM_ARGS="process_noise_regime:=sway feedforward_mode:=velocity_loop stale_velocity_hold_s:=1.0 stale_velocity_decay_s:=1.0 vloop_position_gain_scale:=2.7 vloop_speed_scale:=2.7" ;;
+  D) ARM_ARGS="process_noise_regime:=sway ff_gain_override:=0.37" ;;
+  *) echo "unknown arm: $ARM (A|B|Bgt|Cnone|Cgains|Cnoff|C|D)"; exit 2 ;;
 esac
 [ "$NAV" != "none" ] && ARM_ARGS="$ARM_ARGS nav_error_level:=$NAV"
 # NAV_SIGMA_NP / NAV_SIGMA_NV (m, m/s): white noise on the injected solution

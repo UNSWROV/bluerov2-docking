@@ -111,6 +111,12 @@ class CoarseApproach(Node):
         # position-gain scale in velocity_loop mode (arm F restores the outer-loop
         # bandwidth with g = 2.7); 1.0 keeps arm C as run first
         self.declare_parameter("vloop_position_gain_scale", 1.0)
+        # model feedforward inside the velocity loop, effort per m/s of setpoint
+        # (arm G passes 1 / g = 0.37); 0 keeps the pure PI of arms C and F
+        self.declare_parameter("vloop_kff", 0.0)
+        # speed-cap scale in velocity_loop mode: the v_max caps and the approach ramp
+        # were tuned as efforts, so in m/s they are g times too small (arm G passes 2.7)
+        self.declare_parameter("vloop_speed_scale", 1.0)
         mode = self.get_parameter("feedforward_mode").get_parameter_value().string_value
         if mode not in MODES:
             raise ValueError(f"feedforward_mode must be one of {MODES}, got {mode!r}")
@@ -119,6 +125,7 @@ class CoarseApproach(Node):
             VelocityLoopParams(
                 kp=self.get_parameter("vloop_kp").get_parameter_value().double_value,
                 ki=self.get_parameter("vloop_ki").get_parameter_value().double_value,
+                kff=self.get_parameter("vloop_kff").get_parameter_value().double_value,
             )
         )
         self._vloop_effort_max = VelocityLoopParams().effort_max
@@ -192,6 +199,7 @@ class CoarseApproach(Node):
     def _params(self) -> PbvsParams:
         g = lambda n: self.get_parameter(n).get_parameter_value().double_value
         k = position_gain_scale(self._velocity_loop_on, g("vloop_position_gain_scale"))
+        ks = position_gain_scale(self._velocity_loop_on, g("vloop_speed_scale"))
         return PbvsParams(
             kp_surge=k * g("kp_surge"),
             kd_surge=k * g("kd_surge"),
@@ -201,9 +209,9 @@ class CoarseApproach(Node):
             kd_heave=k * g("kd_heave"),
             kp_yaw=g("kp_yaw"),
             kd_yaw=g("kd_yaw"),
-            v_max_surge=g("v_max_surge"),
-            v_max_sway=g("v_max_sway"),
-            v_max_heave=g("v_max_heave"),
+            v_max_surge=ks * g("v_max_surge"),
+            v_max_sway=ks * g("v_max_sway"),
+            v_max_heave=ks * g("v_max_heave"),
             v_max_yaw=g("v_max_yaw"),
             ff_vel_max=g("ff_vel_max"),
         )
@@ -429,11 +437,12 @@ class CoarseApproach(Node):
         )
 
         # distance-gated surge cap: slows the approach as it nears the dock
+        ks = position_gain_scale(self._velocity_loop_on, gd("vloop_speed_scale"))
         surge_cap = approach_speed_limit(
             g.range_to_dock_m,
-            gd("approach_speed_slope"),
-            gd("approach_speed_floor"),
-            gd("v_max_surge"),
+            ks * gd("approach_speed_slope"),
+            ks * gd("approach_speed_floor"),
+            ks * gd("v_max_surge"),
         )
         surge = max(-surge_cap, min(cmd.surge, surge_cap))
 
