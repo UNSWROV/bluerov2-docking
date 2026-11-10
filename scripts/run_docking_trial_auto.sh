@@ -101,7 +101,15 @@ sim_elapsed(){
   fi
 }
 pgid_of(){ ps -o pgid= -p "$1" 2>/dev/null | tr -d ' '; }
-killgrp(){ local g; g=$(pgid_of "${1:-}"); [ -n "$g" ] && kill -"${2:-TERM}" -- "-$g" 2>/dev/null; return 0; }
+# Signal the process group led by $1. The launch, the recorder and the engage
+# publisher are each started with setsid, so the pid is also the group id; fall back
+# to it when the leader has already exited and its pid no longer resolves. Without
+# the fallback the signal was silently skipped and the rest of the group lived on.
+killgrp(){
+  local g; g=$(pgid_of "${1:-}"); g="${g:-${1:-}}"
+  [ -n "$g" ] && kill -"${2:-TERM}" -- "-$g" 2>/dev/null
+  return 0
+}
 # ArduSub SITL binds TCP 5760 (= hex 1680). `ss`/`netstat` aren't in the container,
 # so read /proc/net/tcp{,6} directly; column 2 is LOCALADDR:PORT in hex.
 port_5760_busy(){ awk 'NR>1{print $2}' /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -qiE ':1680$'; }
@@ -120,7 +128,17 @@ teardown(){
   log "teardown"
   stop_recorder
   killgrp "$ENGAGE_PID" KILL
-  killgrp "$LAUNCH_PID" TERM; sleep 6; killgrp "$LAUNCH_PID" KILL
+  # The launch and its nodes share one process group. TERM it, give the nodes up to
+  # 15 s to leave, then KILL whatever is left. The wait is on the group, not on the
+  # launch process: launch usually exits first, and the nodes that hang in shutdown
+  # are exactly the ones the KILL is for.
+  killgrp "$LAUNCH_PID" TERM
+  if [ -n "$LAUNCH_PID" ]; then
+    for _ in $(seq 1 15); do pgrep -g "$LAUNCH_PID" >/dev/null 2>&1 || break; sleep 1; done
+    local left; left=$(pgrep -g "$LAUNCH_PID" 2>/dev/null | wc -l)
+    [ "$left" -gt 0 ] && log "$left launch processes still alive after TERM, killing"
+  fi
+  killgrp "$LAUNCH_PID" KILL
   pkill -9 -f "gz sim"          2>/dev/null
   pkill -9 -f "ardusub"         2>/dev/null
   pkill -9 -f "parameter_bridge" 2>/dev/null
