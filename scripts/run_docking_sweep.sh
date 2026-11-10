@@ -24,7 +24,8 @@
 # stops it and tears down the running cell. Do not signal the shell that launched it
 # (a `bash -ic` wrapper matches the script name in pgrep -f and ignores TERM).
 #
-# WARNING: each cell pkills gazebo/ardusub on teardown. Do not run other sims meanwhile.
+# WARNING: each cell pkills gazebo/ardusub and every ROS node in the container on
+# teardown. Do not run other sims or nodes meanwhile.
 set -uo pipefail
 
 WS="${WS:-/home/ubuntu/ws_docking}"
@@ -106,7 +107,7 @@ run_one(){  # arm nav dock period phase
       pkill -KILL -P "$CHILD" 2>/dev/null; kill -KILL "$CHILD" 2>/dev/null
       pkill -9 -f "gz sim" 2>/dev/null; pkill -9 -f "ardusub" 2>/dev/null; pkill -9 -f "ros2 launch" 2>/dev/null
       pkill -9 -f "parameter_bridge|mavros_node|ros2 topic|ros2 bag|ruby.*gz" 2>/dev/null
-      pkill -9 -f "dock_pose_filter|led_mock|aruco_|marker_publisher|coarse_approach|fine_align|docking_fsm|nav_error|oracle_dock" 2>/dev/null
+      pkill -9 -f -- "--ros-arg[s]" 2>/dev/null
       rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null
       for _ in $(seq 1 30); do awk 'NR>1{print $2}' /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -qiE ':1680$' || break; sleep 1; done
       sleep 5
@@ -121,6 +122,8 @@ run_one(){  # arm nav dock period phase
   local bag; bag=$(ls -dt "$WS"/bags/"${label}"_* 2>/dev/null | head -1)
   echo "${label},${arm},${dock},${period},${phase},${nav},${outcome},$(basename "${bag:-none}")" >> "$CSV"
   log "=== $label -> ${outcome} ==="
+  local warn; warn=$(grep -c "WARNING" "$WS/bags/${label}.log" 2>/dev/null)
+  [ "${warn:-0}" -gt 0 ] && log "    $label: $warn harness warnings, see its log"
   sleep 5   # margin for teardown to fully release before the next launch
 }
 

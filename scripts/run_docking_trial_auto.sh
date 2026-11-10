@@ -20,7 +20,8 @@
 #   <label>_<arm>_<dock>_p<period>_ph<phase>[_nav<level>]_<YYYYMMDD>_<HHMMSS>
 # so the analysis package parses every cell without a per-sweep regex.
 #
-# WARNING: teardown pkills gazebo/ardusub/mavros, so do not run other sims meanwhile.
+# WARNING: teardown pkills gazebo/ardusub/mavros and every ROS node in the container
+# (anything started with --ros-args), so do not run other sims or nodes meanwhile.
 set -uo pipefail   # not -e: a failed step should still trigger teardown, not abort
 
 PERIOD="${1:-18}"
@@ -101,7 +102,15 @@ sim_elapsed(){
   fi
 }
 pgid_of(){ ps -o pgid= -p "$1" 2>/dev/null | tr -d ' '; }
-killgrp(){ local g; g=$(pgid_of "${1:-}"); [ -n "$g" ] && kill -"${2:-TERM}" -- "-$g" 2>/dev/null; return 0; }
+# Signal the process group led by $1. The launch, the recorder and the engage
+# publisher are each started with setsid, so the pid is also the group id; fall back
+# to it when the leader has already exited and its pid no longer resolves. Without
+# the fallback the signal was silently skipped and the rest of the group lived on.
+killgrp(){
+  local g; g=$(pgid_of "${1:-}"); g="${g:-${1:-}}"
+  [ -n "$g" ] && kill -"${2:-TERM}" -- "-$g" 2>/dev/null
+  return 0
+}
 # ArduSub SITL binds TCP 5760 (= hex 1680). `ss`/`netstat` aren't in the container,
 # so read /proc/net/tcp{,6} directly; column 2 is LOCALADDR:PORT in hex.
 port_5760_busy(){ awk 'NR>1{print $2}' /proc/net/tcp /proc/net/tcp6 2>/dev/null | grep -qiE ':1680$'; }
@@ -116,16 +125,44 @@ stop_recorder(){
   killgrp "$REC_PID" KILL
 }
 
+# Every node a launch starts carries --ros-args on its command line. One that is
+# still alive between trials is debris: it stays on the DDS graph, and enough of
+# them slowed the perception chain of later trials until the filter starved on
+# stale measurements. Kill them and say so in the log: a NOTE after the launch
+# shutdown (a node hung on exit), a WARNING before a launch (it should never happen).
+purge_stray_nodes(){  # $1 = log tag (NOTE or WARNING), $2 = when
+  local pids; pids=$(pgrep -f -- "--ros-arg[s]" 2>/dev/null | tr '\n' ' ')
+  [ -z "${pids// /}" ] && return 0
+  # shellcheck disable=SC2086
+  local names; names=$(ps -o args= -p $pids 2>/dev/null | grep -o "__node:=[^ ]*" | sed 's/__node:=//' | sort | uniq -c | awk '{printf "%s x%s ", $2, $1}')
+  # shellcheck disable=SC2086
+  log "$1 $(echo $pids | wc -w) stray ROS nodes $2, killing: ${names:-unnamed}"
+  # shellcheck disable=SC2086
+  kill -KILL $pids 2>/dev/null
+  sleep 1
+}
+
 teardown(){
   log "teardown"
   stop_recorder
   killgrp "$ENGAGE_PID" KILL
-  killgrp "$LAUNCH_PID" TERM; sleep 6; killgrp "$LAUNCH_PID" KILL
+  # The launch and its nodes share one process group. TERM it, give the nodes up to
+  # 15 s to leave, then KILL whatever is left. The wait is on the group, not on the
+  # launch process: launch usually exits first, and the nodes that hang in shutdown
+  # are exactly the ones the KILL is for.
+  killgrp "$LAUNCH_PID" TERM
+  if [ -n "$LAUNCH_PID" ]; then
+    for _ in $(seq 1 15); do pgrep -g "$LAUNCH_PID" >/dev/null 2>&1 || break; sleep 1; done
+    local left; left=$(pgrep -g "$LAUNCH_PID" 2>/dev/null | wc -l)
+    [ "$left" -gt 0 ] && log "$left launch processes still alive after TERM, killing"
+  fi
+  killgrp "$LAUNCH_PID" KILL
   pkill -9 -f "gz sim"          2>/dev/null
   pkill -9 -f "ardusub"         2>/dev/null
   pkill -9 -f "parameter_bridge" 2>/dev/null
   pkill -9 -f "mavros_node"     2>/dev/null
   pkill -9 -f "ruby.*gz"        2>/dev/null
+  purge_stray_nodes NOTE "survived the launch shutdown"
   # Fast DDS leaves shared-memory port files behind after a hard kill; the next
   # launch then logs "Failed init_port fastrtps_port..." and falls back to UDP.
   rm -f /dev/shm/fastrtps_* /dev/shm/sem.fastrtps_* 2>/dev/null
@@ -155,6 +192,7 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
   echo "RESULT $LABEL DRYRUN"; exit 0
 fi
 launch_stack(){
+  purge_stray_nodes WARNING "found before launch"
   setsid ros2 launch sim sim.launch.py \
       use_control:=true use_deadman:=false use_aruco:=true use_mock_led:=true \
       use_docking_rviz:=false $ARM_ARGS ${EXTRA_LAUNCH_ARGS:-} \
@@ -262,6 +300,13 @@ bag=$(ls -dt "$WS"/bags/"${LABEL}"_* 2>/dev/null | head -1)
 if [ -n "$bag" ] && [ ! -f "$bag/metadata.yaml" ]; then
   log "reindexing bag (metadata.yaml missing)"
   timeout -k 5 60 ros2 bag reindex "$bag" -s mcap >/dev/null 2>&1
+fi
+
+# A perception chain that fell behind sim time shows as the filter's TF lookups
+# asking for stamps older than the buffer. One such line at startup is normal.
+n_extrap=$(grep -c "extrapolation into the past" "/tmp/${LABEL}.log" 2>/dev/null)
+if [ "${n_extrap:-0}" -gt 2 ]; then
+  log "WARNING perception backlog: $n_extrap TF extrapolation warnings in the sim log, treat this trial as invalid"
 fi
 
 log "done: $LABEL -> $outcome  (bag in $WS/bags/, log /tmp/${LABEL}.log)"
