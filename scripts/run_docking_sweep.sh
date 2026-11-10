@@ -122,6 +122,8 @@ run_one(){  # arm nav dock period phase
   local bag; bag=$(ls -dt "$WS"/bags/"${label}"_* 2>/dev/null | head -1)
   echo "${label},${arm},${dock},${period},${phase},${nav},${outcome},$(basename "${bag:-none}")" >> "$CSV"
   log "=== $label -> ${outcome} ==="
+  local warn; warn=$(grep -c "WARNING" "$WS/bags/${label}.log" 2>/dev/null)
+  [ "${warn:-0}" -gt 0 ] && log "    $label: $warn harness warnings, see its log"
   sleep 5   # margin for teardown to fully release before the next launch
 }
 

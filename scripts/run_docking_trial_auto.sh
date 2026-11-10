@@ -302,5 +302,12 @@ if [ -n "$bag" ] && [ ! -f "$bag/metadata.yaml" ]; then
   timeout -k 5 60 ros2 bag reindex "$bag" -s mcap >/dev/null 2>&1
 fi
 
+# A perception chain that fell behind sim time shows as the filter's TF lookups
+# asking for stamps older than the buffer. One such line at startup is normal.
+n_extrap=$(grep -c "extrapolation into the past" "/tmp/${LABEL}.log" 2>/dev/null)
+if [ "${n_extrap:-0}" -gt 2 ]; then
+  log "WARNING perception backlog: $n_extrap TF extrapolation warnings in the sim log, treat this trial as invalid"
+fi
+
 log "done: $LABEL -> $outcome  (bag in $WS/bags/, log /tmp/${LABEL}.log)"
 echo "RESULT $LABEL $outcome"
