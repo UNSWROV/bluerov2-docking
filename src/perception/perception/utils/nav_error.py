@@ -27,8 +27,11 @@ class NavErrorParams:
     seed: int = 0
 
 
+# "white" has no bias: the white terms alone, for testing the sensitivity to a noisy
+# velocity measurement apart from the drift (#97).
 LEVELS = {
     "none": None,
+    "white": NavErrorParams(sigma_b=0.0),
     "low": NavErrorParams(sigma_b=0.01),
     "medium": NavErrorParams(sigma_b=0.03),
     "high": NavErrorParams(sigma_b=0.10),
@@ -52,6 +55,41 @@ class GaussMarkovBias:
             self.b_p = self.b_p + dt * self.b_v + self.rng.normal(0.0, p.sigma_wp, self.b_p.shape)
             self.b_v = rho * self.b_v + self.rng.normal(0.0, p.sigma_b * np.sqrt(1 - rho ** 2), self.b_v.shape)
         return self.b_v.copy(), self.b_p.copy()
+
+
+class SampleHold:
+    """Zero-order hold at a fixed rate, for a sensor slower than the odometry.
+
+    due(t) says whether the sensor reports a new value at time t; set(t, value)
+    stores it and value returns the held one in between. Updates are scheduled on
+    a fixed grid from the first sample, so the mean rate is exact even when the
+    caller's time step does not divide the period. A rate of zero or less means
+    every call is an update. Time going backwards (a simulation reset) restarts
+    the grid.
+    """
+
+    def __init__(self, rate_hz: float):
+        self.period = 1.0 / rate_hz if rate_hz > 0 else 0.0
+        self.value = None
+        self._next = None
+        self._last = None
+
+    def due(self, t: float) -> bool:
+        if self.value is None or self.period <= 0.0:
+            return True
+        if t < self._last:
+            return True
+        return t >= self._next - 1e-9
+
+    def set(self, t: float, value) -> None:
+        if self._next is None or self.period <= 0.0 or t < self._last:
+            self._next = t + self.period
+        else:
+            self._next += self.period
+            if self._next <= t:            # the caller skipped whole periods
+                self._next = t + self.period
+        self._last = t
+        self.value = value
 
 
 def gauss_markov_bias(t: np.ndarray, params: NavErrorParams, dims: int = 3):
