@@ -74,7 +74,12 @@ class Trial:
 
     @property
     def t0(self) -> float:
-        return float(self.t_meas[0])
+        """Trial start: the first fused measurement, or the first COARSE state if the
+        recorder picked up the measurement topic late (one 2026-11-10 bag logged its
+        first measurement after the vehicle had docked, giving a negative seat time)."""
+        coarse = [t for t, s in self.states if s == 0]
+        first_coarse = min(coarse) if coarse else float("inf")
+        return float(min(self.t_meas[0], first_coarse))
 
 
 def load_trial(path: str) -> Trial:
