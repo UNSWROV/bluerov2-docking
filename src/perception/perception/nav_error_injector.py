@@ -18,7 +18,7 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from scipy.spatial.transform import Rotation as R
 
-from perception.utils.nav_error import LEVELS, GaussMarkovBias, NavErrorParams
+from perception.utils.nav_error import LEVELS, GaussMarkovBias, NavErrorParams, SampleHold
 
 
 class NavErrorInjector(Node):
@@ -32,6 +32,10 @@ class NavErrorInjector(Node):
         # differentiates the relayed pose, so the navigation sweep sets it explicitly.
         self.declare_parameter("sigma_np", -1.0)
         self.declare_parameter("sigma_nv", -1.0)
+        # update rate of the velocity measurement [Hz]: the reported velocity (truth plus
+        # bias plus one noise draw) is sampled at this rate and held in between, as a
+        # Doppler velocity log reports it; 0 draws new noise on every odometry sample (#97)
+        self.declare_parameter("velocity_rate_hz", 0.0)
         self.declare_parameter("seed", 0)
         self.declare_parameter("input_topic", "/model/bluerov2_heavy/odometry")
         self.declare_parameter("output_topic", "/nav/odometry")
@@ -55,6 +59,8 @@ class NavErrorInjector(Node):
         self._gen = GaussMarkovBias(self._params) if self._params else None
         self._rng = np.random.default_rng((self._params.seed if self._params else 0) + 1)
         self._last_t = None
+        rate = self.get_parameter("velocity_rate_hz").get_parameter_value().double_value
+        self._vel_hold = SampleHold(rate)
         # RELIABLE so the TF relay's default (reliable) subscription accepts it; a
         # reliable publisher also serves best-effort subscribers, the reverse does not.
         pub_qos = QoSProfile(reliability=ReliabilityPolicy.RELIABLE, history=HistoryPolicy.KEEP_LAST, depth=10)
@@ -68,7 +74,13 @@ class NavErrorInjector(Node):
             Odometry, self.get_parameter("input_topic").get_parameter_value().string_value, self._on_odom, qos_profile_sensor_data
         )
         self.get_logger().info(
-            f"nav_error_injector level={level} " + (f"sigma_b={self._params.sigma_b} tau_b={self._params.tau_b}" if self._params else "(pass-through)")
+            f"nav_error_injector level={level} "
+            + (
+                f"sigma_b={self._params.sigma_b} tau_b={self._params.tau_b} "
+                f"sigma_np={self._params.sigma_np} sigma_nv={self._params.sigma_nv} velocity_rate_hz={rate}"
+                if self._params
+                else "(pass-through)"
+            )
         )
 
     def _on_odom(self, msg: Odometry) -> None:
@@ -88,11 +100,15 @@ class NavErrorInjector(Node):
         out.pose.pose.position.y = msg.pose.pose.position.y + b_p[1] + n_p[1]
         out.pose.pose.position.z = msg.pose.pose.position.z + b_p[2] + n_p[2]
         q = msg.pose.pose.orientation
-        b_v_body = R.from_quat([q.x, q.y, q.z, q.w]).inv().apply(b_v)
-        n_v = self._rng.normal(0.0, p.sigma_nv, 3)
-        out.twist.twist.linear.x = msg.twist.twist.linear.x + b_v_body[0] + n_v[0]
-        out.twist.twist.linear.y = msg.twist.twist.linear.y + b_v_body[1] + n_v[1]
-        out.twist.twist.linear.z = msg.twist.twist.linear.z + b_v_body[2] + n_v[2]
+        if self._vel_hold.due(t):
+            b_v_body = R.from_quat([q.x, q.y, q.z, q.w]).inv().apply(b_v)
+            lin = msg.twist.twist.linear
+            v_meas = np.array([lin.x, lin.y, lin.z]) + b_v_body + self._rng.normal(0.0, p.sigma_nv, 3)
+            self._vel_hold.set(t, v_meas)
+        v_meas = self._vel_hold.value
+        out.twist.twist.linear.x = float(v_meas[0])
+        out.twist.twist.linear.y = float(v_meas[1])
+        out.twist.twist.linear.z = float(v_meas[2])
         self._pub.publish(out)
         bias = Vector3Stamped()
         bias.header = msg.header

@@ -11,7 +11,8 @@
 #                (legacy names accepted: static = A, sway = B)
 #     phase_rad  sway start phase (vary across reps for an honest success rate)
 #     label      bag label prefix (default built from the cell)
-#     nav_level  navigation-error level: none | low | medium | high (default none)
+#     nav_level  navigation-error level: none | white | low | medium | high (default none);
+#                white = no bias, only the white terms NAV_SIGMA_NP / NAV_SIGMA_NV
 # Env knobs: SWAY_AMP, READY_TIMEOUT, DOCK_TIMEOUT (simulation seconds), WALL_GUARD
 #            (wall seconds per simulation second before a stalled sim is abandoned),
 #            WS, EXTRA_LAUNCH_ARGS, DRY_RUN=1
@@ -59,6 +60,8 @@ esac
 # NAV_SIGMA_NP / NAV_SIGMA_NV (m, m/s): white noise on the injected solution
 [ -n "${NAV_SIGMA_NP:-}" ] && ARM_ARGS="$ARM_ARGS nav_error_sigma_np:=$NAV_SIGMA_NP"
 [ -n "${NAV_SIGMA_NV:-}" ] && ARM_ARGS="$ARM_ARGS nav_error_sigma_nv:=$NAV_SIGMA_NV"
+# NAV_VEL_RATE_HZ: update rate of the velocity measurement, held between updates (#97)
+[ -n "${NAV_VEL_RATE_HZ:-}" ] && ARM_ARGS="$ARM_ARGS nav_error_velocity_rate_hz:=$NAV_VEL_RATE_HZ"
 
 SWAY_AMP="${SWAY_AMP:-0.1}"
 # Timeouts count SIMULATION seconds read from /clock, so a throttled host (real-time
